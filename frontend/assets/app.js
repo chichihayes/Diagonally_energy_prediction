@@ -236,9 +236,65 @@ function startAutoRefresh(intervalMs) {
 
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
+function buildSinceParam() {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+}
+
+function renderHistoryChart(predictions) {
+  const canvas = document.getElementById('history-chart');
+  const empty  = document.getElementById('chart-empty');
+
+  if (!predictions.length) {
+    canvas.hidden = true;
+    empty.hidden  = false;
+    return;
+  }
+
+  const labels      = predictions.map(p =>
+    new Date(p.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  );
+  const values      = predictions.map(p => p.predicted_wh);
+  const maxVal      = Math.max(...values);
+  const pointColors = values.map(v => v === maxVal ? '#ef4444' : '#3b82f6');
+
+  canvas.hidden = false;
+  empty.hidden  = true;
+
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Predicted Wh',
+        data: values,
+        borderColor: '#3b82f6',
+        pointBackgroundColor: pointColors,
+        tension: 0.3,
+        fill: false,
+      }]
+    },
+    options: {
+      animation: false,
+      scales: {
+        y: { title: { display: true, text: 'Wh' } }
+      }
+    }
+  });
+}
+
+async function fetchHistoryChart() {
+  const since = buildSinceParam();
+  const res = await fetch(
+    `/api/v1/predictions?tier=full&since=${encodeURIComponent(since)}&limit=96`
+  );
+  const data = await res.json();
+  renderHistoryChart(data);
+}
+
 if (document.getElementById('hero-card')) {
   document.addEventListener('DOMContentLoaded', async () => {
     await loadDashboard();
+    fetchHistoryChart();
     startAutoRefresh(REFRESH_INTERVAL_MS);
   });
 }
