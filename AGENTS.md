@@ -22,3 +22,7 @@ Same standards as CLAUDE.md. Read that file first.
 - [ ] Error handling matches the standard (HTTPException only)
 - [ ] Feature names are identical between training and inference
 - [ ] Model is not retrained inside the API
+- [ ] Cost calculation reads tariff from env variable — not hardcoded
+- [ ] Predictions are stored in Supabase after every API call
+- [ ] Scheduler errors are logged and do not crash the app
+- [ ] Frontend makes fetch() calls to API only — no direct DB calls
