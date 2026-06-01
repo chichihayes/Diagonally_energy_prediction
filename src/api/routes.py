@@ -10,8 +10,9 @@ from src.services import database
 from src.services.weather import get_weather
 from src.services.features import assemble_simple_features, assemble_full_features
 from src.model.predict import predict_simple, predict_full
-from src.services.cost import wh_to_cost
+from src.services.cost import wh_to_cost, project_monthly_bill
 from src.services.database import insert_prediction
+from src.model.forecast import forecast_7d
 
 router = APIRouter(prefix="/api/v1")
 
@@ -101,3 +102,20 @@ def get_leaderboard():
             detail="Leaderboard not available — run training scripts first",
         )
     return json.loads(leaderboard_path.read_text())
+
+
+@router.get("/forecast/7d")
+def get_forecast_7d(location: str = None):
+    if not location:
+        raise HTTPException(status_code=400, detail="location query param is required")
+    try:
+        result = forecast_7d()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    bill = project_monthly_bill(result["forecast"])
+    return {
+        "forecast": result["forecast"],
+        "peak_day": result["peak_day"],
+        "lowest_day": result["lowest_day"],
+        "projected_month_bill": bill,
+    }
