@@ -8,6 +8,10 @@ supabase: Client = create_client(
 )
 
 
+def insert_prediction(row: dict) -> None:
+    supabase.table("predictions").insert(row).execute()
+
+
 def get_predictions(tier: str | None = None, limit: int = 10) -> list[dict]:
     query = (
         supabase.table("predictions")

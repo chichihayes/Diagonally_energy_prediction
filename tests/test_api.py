@@ -45,6 +45,58 @@ def test_get_predictions_response_shape(client, mock_get_predictions):
 
 
 @pytest.fixture
+def mock_predict_simple_deps(monkeypatch):
+    weather = {"T_out": 28.4, "RH_out": 82.0, "Windspeed": 3.1, "Visibility": 10.0, "Tdewpoint": 25.1}
+    monkeypatch.setattr("src.api.routes.get_weather", lambda city: weather)
+    monkeypatch.setattr("src.api.routes.predict_simple", lambda features: 60.5)
+    monkeypatch.setattr("src.api.routes.insert_prediction", lambda row: None)
+    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
+    return weather
+
+
+def test_predict_simple_returns_200(client, mock_predict_simple_deps):
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
+    assert response.status_code == 200
+
+
+def test_predict_simple_response_shape(client, mock_predict_simple_deps):
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
+    body = response.json()
+    assert set(body.keys()) == {"predicted_wh", "predicted_kwh", "estimated_cost_ngn", "weather_factors"}
+
+
+def test_predict_simple_kwh_equals_wh_over_1000(client, mock_predict_simple_deps):
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
+    body = response.json()
+    assert body["predicted_kwh"] == pytest.approx(body["predicted_wh"] / 1000)
+
+
+def test_predict_simple_cost_calculation(client, mock_predict_simple_deps):
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
+    body = response.json()
+    expected = round(body["predicted_kwh"] * 68.00, 2)
+    assert body["estimated_cost_ngn"] == pytest.approx(expected)
+
+
+def test_predict_simple_weather_factors_keys(client, mock_predict_simple_deps):
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
+    wf = response.json()["weather_factors"]
+    assert set(wf.keys()) == {"T_out", "RH_out", "Windspeed", "Visibility", "Tdewpoint"}
+
+
+def test_predict_simple_missing_field_returns_422(client):
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89})
+    assert response.status_code == 422
+
+
+def test_predict_simple_weather_error_propagates(client, monkeypatch):
+    from fastapi import HTTPException
+    monkeypatch.setattr("src.api.routes.get_weather", lambda city: (_ for _ in ()).throw(HTTPException(status_code=500, detail="Weather fetch failed")))
+    response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
+    assert response.status_code == 500
+
+
+@pytest.fixture
 def seed_full_prediction(monkeypatch):
     row = {
         "id": "abc-123",
