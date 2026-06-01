@@ -18,10 +18,10 @@ models including TFT and LSTM. Chosen over raw PyTorch to reduce boilerplate
 and keep training code consistent across all five forecast models.
 
 ## ADR-004: Two separate regression models saved
-model_full.joblib trained on 26 features for Smart Home tier.
+model_full.joblib trained on 25 features for Smart Home tier.
 model_simple.joblib trained on 7 features for Basic tier.
 Basic tier users have no sensors — simpler model gives meaningful predictions 
-without requiring all 26 inputs.
+without requiring all 25 inputs.
 
 ## ADR-005: rv1 and rv2 dropped at preprocessing
 Random noise variables added by dataset authors to test model robustness. 
