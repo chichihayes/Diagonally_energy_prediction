@@ -24,3 +24,27 @@ def test_build_simple_matrix_returns_7_columns():
     assert list(X.columns) == ["lights", "T1", "T_out", "RH_out", "Windspeed", "Visibility", "Tdewpoint"]
     assert y.name == "Appliances"
     assert len(X) == len(y)
+
+
+def test_build_full_matrix_returns_25_columns():
+    from src.services.data_loader import load_and_split
+    from src.services.features import build_full_matrix
+    train, _ = load_and_split()
+    X, y = build_full_matrix(train)
+    expected_cols = [
+        "lights", "T1", "RH_1", "T2", "RH_2", "T3", "RH_3", "T4", "RH_4",
+        "T5", "RH_5", "T6", "RH_6", "T7", "RH_7", "T8", "RH_8", "T9", "RH_9",
+        "T_out", "Press_mm_hg", "RH_out", "Windspeed", "Visibility", "Tdewpoint",
+    ]
+    assert list(X.columns) == expected_cols
+    assert y.name == "Appliances"
+    assert len(X) == len(y)
+
+
+def test_build_full_matrix_excludes_rv_columns():
+    from src.services.data_loader import load_and_split
+    from src.services.features import build_full_matrix
+    train, _ = load_and_split()
+    X, _ = build_full_matrix(train)
+    assert "rv1" not in X.columns
+    assert "rv2" not in X.columns
