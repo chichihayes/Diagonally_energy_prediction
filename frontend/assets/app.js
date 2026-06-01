@@ -87,9 +87,39 @@ function renderError(message) {
   document.getElementById('error-container').classList.remove('hidden');
 }
 
+async function loadHistory() {
+  const tbody = document.getElementById('history-body');
+  if (!tbody) return;
+  const res = await fetch('/api/v1/predictions?tier=simple&limit=10');
+  const rows = await res.json();
+
+  if (!rows.length) {
+    tbody.innerHTML = `
+      <tr id="history-empty">
+        <td colspan="4" class="px-4 py-6 text-center text-gray-400">No predictions yet</td>
+      </tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => {
+    const time = new Date(row.created_at).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+      <td class="px-4 py-3 whitespace-nowrap">${time}</td>
+      <td class="px-4 py-3">${row.predicted_wh.toFixed(1)}</td>
+      <td class="px-4 py-3">${row.predicted_kwh.toFixed(4)}</td>
+      <td class="px-4 py-3">₦${row.estimated_cost_ngn.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('prediction-form');
   if (!form) return;
+
+  loadHistory();
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -109,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         location: values.city,
       });
       renderResult(data);
+      await loadHistory();
     } catch (err) {
       renderError(err.message);
     } finally {
