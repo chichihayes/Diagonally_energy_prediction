@@ -291,10 +291,47 @@ async function fetchHistoryChart() {
   renderHistoryChart(data);
 }
 
+function formatDate(isoString) {
+  const d    = new Date(isoString);
+  const dd   = String(d.getDate()).padStart(2, '0');
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh   = String(d.getHours()).padStart(2, '0');
+  const min  = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+function renderHistoryTable(predictions) {
+  const tbody = document.getElementById('history-table-body');
+  if (!predictions.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="py-2 text-gray-500">No data yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = predictions.map(p => `
+    <tr class="border-b last:border-0">
+      <td class="py-1 pr-4">${formatDate(p.created_at)}</td>
+      <td class="py-1 pr-4">${Math.round(p.predicted_wh)}</td>
+      <td class="py-1 pr-4">${p.predicted_kwh.toFixed(4)}</td>
+      <td class="py-1">&#8358;${p.estimated_cost_ngn.toFixed(2)}</td>
+    </tr>
+  `).join('');
+}
+
+async function fetchHistoryTable() {
+  const res  = await fetch('/api/v1/predictions?tier=full&limit=10');
+  const data = await res.json();
+  renderHistoryTable(data);
+}
+
 if (document.getElementById('hero-card')) {
   document.addEventListener('DOMContentLoaded', async () => {
     await loadDashboard();
     fetchHistoryChart();
-    startAutoRefresh(REFRESH_INTERVAL_MS);
+    fetchHistoryTable();
+    setInterval(() => {
+      refreshDashboard();
+      fetchHistoryChart();
+      fetchHistoryTable();
+    }, REFRESH_INTERVAL_MS);
   });
 }
