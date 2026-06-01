@@ -31,7 +31,10 @@ input is needed.
 ## Stack
 - Language: Python 3.11
 - API: FastAPI + Uvicorn
-- ML: scikit-learn (Random Forest / XGBoost)
+- Regression Models (Layer 1): Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression — all trained and evaluated, best R² saved as final model
+- Time Series Models (Layer 2): Prophet, XGBoost with lag features, LightGBM with lag features, LSTM, TFT (Temporal Fusion Transformer) — all trained and evaluated, best MAPE saved as final model
+- Deep Learning: PyTorch (for LSTM and TFT models)
+- Time Series Library: neuralforecast (for TFT and N-BEATS), prophet
 - Data: pandas, numpy
 - Model persistence: joblib
 - Dataset: UCI Appliances Energy Prediction (19,735 rows, 28 features, CSV format)
@@ -47,6 +50,7 @@ input is needed.
 ```
 MODEL_PATH_FULL=src/model/trained/model_full.joblib
 MODEL_PATH_SIMPLE=src/model/trained/model_simple.joblib
+MODEL_PATH_FORECAST=src/model/trained/model_forecast.joblib
 API_HOST=0.0.0.0
 API_PORT=8000
 OPENWEATHERMAP_API_KEY=
@@ -67,56 +71,98 @@ ELECTRICITY_TARIFF_NGN_PER_KWH=68.00
 ```
 diagonally-energy-prediction/
 ├── data/
-│   ├── raw/                         # original UCI dataset (KAG_energydata_complete.csv)
-│   └── processed/                   # cleaned and engineered features
-├── notebooks/                       # EDA and experimentation
+│   ├── raw/                              # original UCI dataset (KAG_energydata_complete.csv)
+│   └── processed/                        # cleaned and engineered features + lag features
+├── notebooks/                            # EDA, model comparison, feature importance
 ├── frontend/
-│   ├── index.html                   # main homeowner dashboard
-│   ├── simple.html                  # basic tier input form
-│   ├── full.html                    # smart home tier input form
+│   ├── index.html                        # Basic tier form and current prediction
+│   ├── dashboard.html                    # Smart Home tier live dashboard
+│   ├── forecast.html                     # 24hr and 7-day forecast + monthly bill projection
 │   └── assets/
-│       ├── style.css                # custom styles
-│       └── app.js                   # API calls and UI logic
+│       ├── style.css                     # custom styles
+│       └── app.js                        # API calls and UI logic
 ├── src/
 │   ├── api/
-│   │   ├── main.py                  # FastAPI app entry point
-│   │   └── routes.py                # /predict/full and /predict/simple endpoints
+│   │   ├── main.py                       # FastAPI app entry point + APScheduler startup
+│   │   └── routes.py                     # all prediction and forecast endpoints
 │   ├── model/
-│   │   ├── train_full.py            # train model on all 26 features
-│   │   ├── train_simple.py          # train model on 7 features only
-│   │   ├── predict.py               # load both models and run inference
-│   │   └── trained/                 # saved model files (gitignored)
+│   │   ├── train_full.py                 # train all 6 regression models on 26 features — save best R²
+│   │   ├── train_simple.py               # train all 6 regression models on 7 features — save best R²
+│   │   ├── train_forecast.py             # train all 5 time series models — save best MAPE
+│   │   ├── evaluate.py                   # compare all models, print leaderboard, return best
+│   │   ├── predict.py                    # load regression model singletons and run inference
+│   │   ├── forecast.py                   # load forecast model singleton and return predictions
+│   │   └── trained/
+│   │       ├── model_full.joblib         # best regression model on 26 features
+│   │       ├── model_simple.joblib       # best regression model on 7 features
+│   │       └── model_forecast.joblib     # best time series model
 │   └── services/
-│       ├── features.py              # feature engineering pipeline
-│       ├── data_loader.py           # load and preprocess raw CSV
-│       ├── weather.py               # fetch outside weather from OpenWeatherMap
-│       ├── cost.py                  # convert predicted Wh to NGN cost using tariff rate
-│       ├── database.py              # Supabase client — store and retrieve predictions
-│       └── scheduler.py             # APScheduler — auto-submit readings every 15 minutes
+│       ├── features.py                   # assemble feature dicts for both tiers + lag features
+│       ├── data_loader.py                # load and preprocess KAG_energydata_complete.csv
+│       ├── weather.py                    # OpenWeatherMap client with 10-min cache
+│       ├── cost.py                       # Wh to NGN conversion + monthly bill projection
+│       ├── database.py                   # Supabase insert and retrieve predictions and forecasts
+│       └── scheduler.py                  # APScheduler — auto-submit readings every 15 minutes
 ├── tests/
-│   ├── test_api.py                  # API endpoint tests for both tiers
-│   ├── test_features.py             # feature engineering tests
-│   ├── test_model.py                # model prediction tests
-│   ├── test_weather.py              # weather service mock tests
-│   ├── test_cost.py                 # cost calculation tests
-│   └── test_database.py             # Supabase storage tests
+│   ├── test_api.py                       # endpoint tests for all routes
+│   ├── test_features.py                  # feature assembly and lag feature tests
+│   ├── test_model.py                     # regression model inference tests
+│   ├── test_forecast.py                  # time series forecast tests
+│   ├── test_evaluate.py                  # model comparison and leaderboard tests
+│   ├── test_weather.py                   # weather client and cache tests
+│   ├── test_cost.py                      # cost calculation and bill projection tests
+│   └── test_database.py                  # Supabase storage tests
 ├── scripts/
-│   ├── run_training_full.py         # trigger full model training
-│   └── run_training_simple.py       # trigger simple model training
+│   ├── run_training_full.py              # train all regression models, save best for full tier
+│   ├── run_training_simple.py            # train all regression models, save best for simple tier
+│   └── run_training_forecast.py          # train all time series models, save best forecast model
 └── .github/workflows/
-    └── ci.yml                       # run tests on push
+    └── ci.yml                            # run all tests on push to main
 ```
 
 ## ML conventions
-- Always load both models once at startup using global singletons — never reload per request
-- Feature engineering must be identical at training time and inference time for each tier
-- Full model feature names: lights, T1, RH_1, T2, RH_2, T3, RH_3, T4, RH_4, T5, RH_5, T6, RH_6, T7, RH_7, T8, RH_8, T9, RH_9, T_out, Press_mm_hg, RH_out, Windspeed, Visibility, Tdewpoint
-- Simple model feature names: lights, T1, T_out, RH_out, Windspeed, Visibility, Tdewpoint
-- rv1 and rv2 are always dropped at preprocessing — they are random noise variables
+
+Layer 1 — Current Consumption (Regression):
+- Six models trained and evaluated: Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression
+- All six trained on same feature sets — full (26 features) and simple (7 features)
+- Evaluation metric: R² score on held-out test split (80/20 split, no shuffle — time ordered)
+- Best R² model saved as model_full.joblib and model_simple.joblib respectively
+- Full model features: lights, T1, RH_1, T2, RH_2, T3, RH_3, T4, RH_4, T5, RH_5, T6, RH_6, T7, RH_7, T8, RH_8, T9, RH_9, T_out, Press_mm_hg, RH_out, Windspeed, Visibility, Tdewpoint
+- Simple model features: lights, T1, T_out, RH_out, Windspeed, Visibility, Tdewpoint
+- rv1 and rv2 always dropped at preprocessing — random noise variables
 - Never pull all rows into memory for prediction — accept feature dict, return float
-- Model files go in src/model/trained/ and are gitignored
+- All models loaded once at startup as global singletons — never reload per request
 - Retrain by running scripts/run_training_full.py or run_training_simple.py — never retrain inside the API
-- weather.py fetches outside features using homeowner location — always cache the weather response for 10 minutes to avoid hitting API rate limits
+
+Layer 2 — Future Consumption (Time Series):
+- Five models trained and evaluated: Prophet, XGBoost with lag features, LightGBM with lag features, LSTM, TFT (Temporal Fusion Transformer)
+- Evaluation metric: MAPE (Mean Absolute Percentage Error) on held-out test split
+- Best MAPE model saved as model_forecast.joblib
+- All time series models trained on historical Appliances column with datetime index
+- Lag features for XGBoost and LightGBM: lag_1h, lag_24h, lag_168h (1 week), rolling_mean_3h, rolling_mean_24h
+- LSTM and TFT implemented using PyTorch via neuralforecast library
+- Forecast horizons: 24 hours ahead (hourly) and 7 days ahead (daily)
+- All forecast models return: yhat, yhat_lower, yhat_upper (confidence interval)
+- Retrain by running scripts/run_training_forecast.py — never retrain inside the API
+
+Layer 3 — Bill Estimation (No Model):
+- Pure calculation — no ML model involved
+- Formula: projected_bill_ngn = sum(forecast_kwh) × ELECTRICITY_TARIFF_NGN_PER_KWH
+- Return optimistic (yhat_lower), pessimistic (yhat_upper) and most likely (yhat) bill projections
+- Days remaining calculated from datetime.now() — never hardcoded
+- Always read tariff from ELECTRICITY_TARIFF_NGN_PER_KWH environment variable
+- Round all NGN values to 2 decimal places
+
+## Time series conventions
+- Five models evaluated: Prophet, XGBoost with lags, LightGBM with lags, LSTM, TFT
+- Best MAPE on test split is saved as model_forecast.joblib
+- Prophet input: dataframe with ds (datetime) and y (Appliances Wh) columns
+- XGBoost and LightGBM time series input: lag features (lag_1h, lag_24h, lag_168h, rolling_mean_3h, rolling_mean_24h)
+- LSTM and TFT implemented via neuralforecast library using PyTorch
+- All forecast outputs include: yhat, yhat_lower, yhat_upper
+- Forecast horizons: 24 hours (hourly, freq=H) and 7 days (daily, freq=D)
+- Never expose raw model output to the API — always format into clean JSON
+- forecast.py loads best model once at startup as a singleton
 
 ## Database conventions
 - Always use supabase-py client — never raw psycopg2
