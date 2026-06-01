@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Diagonally Energy Prediction — Prototype v1.0</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+/* ===== DESIGN TOKENS (spec §10) ===== */
+:root {
+  --brand:          #0D9488;
+  --brand-hover:    #0F766E;
+  --brand-pressed:  #115E59;
+  --brand-light:    #F0FDFA;
+  --bg:             #FFFFFF;
+  --bg-elevated:    #F9FAFB;
+  --surface:        #F3F4F6;
+  --border:         #E5E7EB;
+  --border-strong:  #D1D5DB;
+  --text:           #111827;
+  --text-2:         #374151;
+  --text-3:         #6B7280;
+  --text-4:         #9CA3AF;
+  --success:        #16A34A;
+  --warning:        #F59E0B;
+  --warning-bg:     #FFFBEB;
+  --error:          #EF4444;
+  --error-bg:       #FEF2F2;
+  --r-sm: 4px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-full: 9999px;
+  --sh-sm: 0 1px 2px rgba(0,0,0,.05);
+  --sh-md: 0 4px 6px -1px rgba(0,0,0,.10),0 2px 4px -2px rgba(0,0,0,.05);
+  --sh-lg: 0 10px 15px -3px rgba(0,0,0,.10),0 4px 6px -4px rgba(0,0,0,.05);
+  --ease: cubic-bezier(.2,0,0,1);
+}
+
+/* ===== RESET ===== */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#18181B;color:var(--text);overflow:hidden;height:100vh}
+
+/* ===== SHELL ===== */
+.shell{display:grid;grid-template-columns:280px 1fr 280px;height:100vh;gap:12px;padding:12px}
+@media(max-width:1100px){.shell{grid-template-columns:1fr;padding:0;gap:0}.panel-l,.panel-r{display:none}}
+.panel{background:#27272A;border-radius:10px;padding:14px;color:#FAFAFA;overflow-y:auto;font-size:12px}
+.panel h3{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#A1A1AA;margin:0 0 8px}
+.pbtn{background:#3F3F46;color:#FAFAFA;border:none;padding:7px 11px;border-radius:7px;cursor:pointer;font-size:11px;transition:background .1s}
+.pbtn:hover{background:#52525B}.pbtn.on{background:var(--brand)}
+
+/* ===== DEVICE FRAME ===== */
+.frame-wrap{display:flex;align-items:center;justify-content:center}
+.frame{background:var(--bg);border-radius:32px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.6);position:relative;transition:all .2s var(--ease)}
+.frame.mobile{width:390px;height:844px}
+.frame.tablet{width:744px;height:900px;border-radius:20px}
+.frame.desktop{width:100%;height:100%;max-width:1280px;border-radius:10px}
+.screen{width:100%;height:100%;overflow-y:auto;overflow-x:hidden;background:var(--bg);color:var(--text);font-family:Inter,sans-serif;position:relative}
+
+/* ===== APP CHROME ===== */
+.topnav{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center;padding:0 20px;gap:16px}
+.topnav .logo{font-size:16px;font-weight:700;color:var(--brand);text-decoration:none}
+.topnav .logo span{color:var(--text-2);font-weight:400}
+.topnav .nav-links{display:flex;gap:4px;margin-left:auto}
+.nav-link{padding:7px 14px;border-radius:var(--r-md);border:none;background:none;cursor:pointer;font-size:14px;font-weight:500;color:var(--text-2);text-decoration:none;transition:background .1s,color .1s}
+.nav-link:hover{background:var(--surface);color:var(--text)}
+.nav-link.active{color:var(--brand);background:var(--brand-light)}
+.hamburger{display:none;background:none;border:none;cursor:pointer;padding:8px;min-width:44px;min-height:44px;align-items:center;justify-content:center;margin-left:auto}
+@media(max-width:600px){.topnav .nav-links{display:none}.hamburger{display:flex}}
+.nav-dropdown{position:absolute;top:56px;left:0;right:0;background:var(--bg);border-bottom:1px solid var(--border);z-index:50;box-shadow:var(--sh-md);animation:slideDown .15s var(--ease)}
+.nav-dropdown button{display:block;width:100%;text-align:left;padding:14px 20px;border:none;background:none;font-size:15px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--border)}
+.nav-dropdown button:hover{background:var(--surface)}
+.nav-dropdown button.active{color:var(--brand);background:var(--brand-light)}
+
+/* ===== BUTTONS ===== */
+.btn{border:none;border-radius:var(--r-md);cursor:pointer;font-weight:500;font-size:15px;min-height:44px;padding:0 20px;transition:background .1s}
+.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{background:var(--brand-hover)}.btn-primary:active{background:var(--brand-pressed)}
+.btn-primary:disabled{background:var(--text-4);cursor:not-allowed}
+.btn-secondary{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}.btn-secondary:hover{background:var(--brand-light)}
+.btn-ghost{background:none;color:var(--text-2);border:none}.btn-ghost:hover{background:var(--surface)}
+
+/* ===== INPUTS ===== */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:14px;font-weight:500;color:var(--text-2);margin-bottom:6px}
+.field input{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--r-md);font-size:15px;background:var(--bg);color:var(--text);min-height:44px;transition:border .1s}
+.field input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(13,148,136,.15)}
+.field .err{color:var(--error);font-size:13px;margin-top:4px}
+
+/* ===== CARDS ===== */
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;box-shadow:var(--sh-sm)}
+
+/* ===== SKELETON ===== */
+.skel{background:linear-gradient(90deg,var(--surface) 0%,var(--border) 50%,var(--surface) 100%);background-size:200% 100%;animation:shimmer 1.5s infinite linear;border-radius:var(--r-md)}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+
+/* ===== TOAST ===== */
+.toast{position:absolute;bottom:24px;right:20px;background:var(--text);color:#fff;padding:11px 18px;border-radius:var(--r-full);font-size:14px;z-index:300;box-shadow:var(--sh-lg);animation:toastIn .15s var(--ease)}
+@keyframes toastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* ===== SCREEN ANIM ===== */
+.screen-enter{animation:screenIn .2s var(--ease)}
+@keyframes screenIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+
+/* ===== INLINE ERROR ===== */
+.inline-err{background:var(--error-bg);border:1px solid #FECACA;border-radius:var(--r-md);padding:12px 16px;font-size:14px;color:#991B1B;display:flex;align-items:center;gap:8px}
+
+/* ===== SENSOR TILE ===== */
+.sensor-tile{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px;text-align:center}
+.sensor-tile .room{font-size:11px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.sensor-tile .temp{font-size:20px;font-weight:700;color:var(--text)}
+.sensor-tile .hum{font-size:13px;color:var(--text-3);margin-top:2px}
+
+/* ===== HERO PREDICTION ===== */
+.hero-pred{background:linear-gradient(135deg,var(--brand-light) 0%,#fff 100%);border:1px solid #99F6E4;border-radius:var(--r-xl);padding:24px}
+
+/* ===== PILL BADGE ===== */
+.pill{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:var(--r-full);font-size:12px;font-weight:600}
+.pill-amber{background:#FEF3C7;color:#92400E}
+.pill-teal{background:var(--brand-light);color:var(--brand-pressed)}
+
+/* ===== BILL CARD ===== */
+.bill-col{text-align:center;padding:16px}
+.bill-col .label{font-size:12px;color:var(--text-3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.bill-col .amount{font-weight:700;color:var(--text)}
+.bill-col.featured .amount{font-size:28px;color:var(--brand)}
+.bill-col:not(.featured) .amount{font-size:18px;color:var(--text-2)}
+
+/* ===== HISTORY TABLE ===== */
+.hist-table{width:100%;border-collapse:collapse;font-size:13px}
+.hist-table th{text-align:left;padding:8px 12px;font-weight:600;color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border)}
+.hist-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text-2)}
+.hist-table tr:last-child td{border-bottom:none}
+.hist-table tr:hover td{background:var(--bg-elevated)}
+
+/* ===== REDUCED MOTION ===== */
+@media(prefers-reduced-motion:reduce){*{animation-duration:1ms!important;transition-duration:1ms!important}}
+
+/* ===== SCROLLBAR ===== */
+.screen::-webkit-scrollbar{width:4px}.screen::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:2px}
+
+@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ===== SPINNER ===== */
+.spin{animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body x-data="app()" x-init="init()">
+
+<!-- [PROTO ASSUMPTION] Single HTML file with hash routing (#/, #/simple, #/dashboard, #/forecast).
+     Navigation is via top nav bar (not tab bar) since spec §6.1 specifies top nav for a 4-page web app.
+     Charts are SVG-based (no external library) to keep the file self-contained. -->
+
+<div class="shell">
+
+  <!-- ===== LEFT PANEL ===== -->
+  <aside class="panel panel-l" style="display:flex;flex-direction:column;gap:14px">
+    <div>
+      <div style="font-size:15px;font-weight:700;color:#FAFAFA;margin-bottom:2px">Diagonally Energy</div>
+      <div style="font-size:11px;color:#A1A1AA">UI Prototype · v1.0</div>
+    </div>
+
+    <div>
+      <h3>Device</h3>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button class="pbtn" :class="device==='mobile'&&'on'" @click="device='mobile'">📱 Mobile</button>
+        <button class="pbtn" :class="device==='tablet'&&'on'" @click="device='tablet'">📲 Tablet</button>
+        <button class="pbtn" :class="device==='desktop'&&'on'" @click="device='desktop'">🖥 Desktop</button>
+      </div>
+    </div>
+
+    <div>
+      <h3>Jump to screen</h3>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <template x-for="s in screens" :key="s.id">
+          <button class="pbtn" :class="currentScreen===s.id&&'on'" @click="go(s.route)" style="text-align:left">
+            <div style="font-weight:600" x-text="s.name"></div>
+            <div style="font-size:10px;opacity:.6" x-text="s.route"></div>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <div>
+      <h3>Force state</h3>
+      <div style="font-size:10px;color:#71717A;margin-bottom:6px">Tap again to clear</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">
+        <template x-for="s in ['populated','empty','loading','error','partial','offline']" :key="s">
+          <button class="pbtn" :class="forcedState===s&&'on'" @click="forcedState=forcedState===s?null:s" x-text="s"></button>
+        </template>
+      </div>
+    </div>
+
+    <div>
+      <h3>Controls</h3>
+      <div style="display:flex;gap:5px">
+        <button class="pbtn" @click="back()">← Back</button>
+        <button class="pbtn" @click="reset()">↻ Reset</button>
+      </div>
+    </div>
+
+    <div style="padding-top:10px;border-top:1px solid #3F3F46;font-size:10px;color:#71717A;line-height:1.6">
+      <div>Route: <code style="color:#FAFAFA" x-text="route"></code></div>
+      <div>Screen: <code style="color:#FAFAFA" x-text="currentScreen"></code></div>
+      <div>State: <code style="color:var(--brand)" x-text="forcedState||'real'"></code></div>
+      <div>Stack: <code style="color:#FAFAFA" x-text="history.length"></code> deep</div>
+    </div>
+  </aside>
+
+  <!-- ===== CENTER (DEVICE FRAME) ===== -->
+  <main class="frame-wrap">
+    <div class="frame" :class="device">
+      <div class="screen">
+
+        <!-- NAV DROPDOWN (overlay when hamburger open) -->
+        <template x-if="navOpen">
+          <div class="nav-dropdown">
+            <button @click="go('/');navOpen=false" :class="currentScreen==='landing'&&'active'">🏠 Home</button>
+            <button @click="go('/simple');navOpen=false" :class="currentScreen==='simple'&&'active'">📊 Basic tier</button>
+            <button @click="go('/dashboard');navOpen=false" :class="currentScreen==='dashboard'&&'active'">📡 Dashboard</button>
+            <button @click="go('/forecast');navOpen=false" :class="currentScreen==='forecast'&&'active'">📅 Forecast</button>
+          </div>
+        </template>
+
+        <!-- ============================================================ -->
+        <!-- SCREEN: LANDING -->
+        <!-- ============================================================ -->
+        <template x-if="currentScreen==='landing'">
+          <div class="screen-enter" style="min-height:100%">
+            <nav class="topnav">
+              <span class="logo">Diagonally <span>Energy</span></span>
+              <div class="nav-links">
+                <button class="nav-link active">Home</button>
+                <button class="nav-link" @click="go('/simple')">Basic tier</button>
+                <button class="nav-link" @click="go('/dashboard')">Dashboard</button>
+                <button class="nav-link" @click="go('/forecast')">Forecast</button>
+              </div>
+              <button class="hamburger" @click="navOpen=!navOpen" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+            </nav>
+
+            <!-- Hero -->
+            <div style="padding:40px 24px 0;text-align:center">
+              <div style="display:inline-flex;align-items:center;gap:8px;background:var(--brand-light);border:1px solid #99F6E4;border-radius:var(--r-full);padding:6px 14px;font-size:13px;color:var(--brand);font-weight:600;margin-bottom:20px">
+                ⚡ Real-time appliance energy prediction
+              </div>
+              <h1 style="font-size:28px;font-weight:800;color:var(--text);line-height:1.2;margin-bottom:12px">Know your electricity bill<br>before it arrives</h1>
+              <p style="font-size:16px;color:var(--text-2);line-height:1.6;max-width:420px;margin:0 auto 32px">Enter your room temperature and lights usage. We fetch the weather and predict your appliance consumption in watt-hours — with the estimated cost in Naira.</p>
+            </div>
+
+            <!-- Tier cards -->
+            <div style="padding:0 20px 8px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <!-- Basic tier -->
+              <div class="card" style="cursor:pointer" @click="go('/simple')">
+                <div style="font-size:28px;margin-bottom:10px">📊</div>
+                <div style="font-size:15px;font-weight:700;margin-bottom:6px">Basic tier</div>
+                <div style="font-size:13px;color:var(--text-3);line-height:1.5;margin-bottom:16px">No sensors needed. Enter 2 values and your city — we do the rest.</div>
+                <button class="btn btn-primary" style="width:100%;font-size:14px" @click.stop="go('/simple')">Try Basic tier</button>
+              </div>
+              <!-- Smart Home tier -->
+              <div class="card" style="cursor:pointer" @click="go('/dashboard')">
+                <div style="font-size:28px;margin-bottom:10px">📡</div>
+                <div style="font-size:15px;font-weight:700;margin-bottom:6px">Smart Home</div>
+                <div style="font-size:13px;color:var(--text-3);line-height:1.5;margin-bottom:16px">Zigbee sensors + live weather. Auto-updates every 15 minutes.</div>
+                <button class="btn btn-secondary" style="width:100%;font-size:14px" @click.stop="go('/dashboard')">Open Dashboard</button>
+              </div>
+            </div>
+
+            <!-- How it works -->
+            <div style="padding:24px 20px">
+              <div style="font-size:13px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px;text-align:center">How it works</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+                <div style="padding:12px 8px">
+                  <div style="font-size:24px;margin-bottom:6px">📝</div>
+                  <div style="font-size:12px;font-weight:600;margin-bottom:4px">Enter readings</div>
+                  <div style="font-size:11px;color:var(--text-3)">Lights + temperature + city</div>
+                </div>
+                <div style="padding:12px 8px">
+                  <div style="font-size:24px;margin-bottom:6px">🌤</div>
+                  <div style="font-size:12px;font-weight:600;margin-bottom:4px">We fetch weather</div>
+                  <div style="font-size:11px;color:var(--text-3)">OpenWeatherMap auto-fills outside conditions</div>
+                </div>
+                <div style="padding:12px 8px">
+                  <div style="font-size:24px;margin-bottom:6px">₦</div>
+                  <div style="font-size:12px;font-weight:600;margin-bottom:4px">See your cost</div>
+                  <div style="font-size:11px;color:var(--text-3)">Predicted Wh and estimated NGN cost</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Forecast CTA -->
+            <div style="padding:0 20px 32px;text-align:center">
+              <button class="btn btn-ghost" style="font-size:14px;color:var(--brand)" @click="go('/forecast')">
+                📅 See 7-day forecast →
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- ============================================================ -->
+        <!-- SCREEN: SIMPLE (Basic tier) -->
+        <!-- ============================================================ -->
+        <template x-if="currentScreen==='simple'">
+          <div class="screen-enter" style="min-height:100%">
+            <nav class="topnav">
+              <span class="logo">Diagonally <span>Energy</span></span>
+              <div class="nav-links">
+                <button class="nav-link" @click="go('/')">Home</button>
+                <button class="nav-link active">Basic tier</button>
+                <button class="nav-link" @click="go('/dashboard')">Dashboard</button>
+                <button class="nav-link" @click="go('/forecast')">Forecast</button>
+              </div>
+              <button class="hamburger" @click="navOpen=!navOpen" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+            </nav>
+
+            <div style="padding:24px 20px">
+              <h1 style="font-size:22px;font-weight:700;margin-bottom:4px">Basic tier prediction</h1>
+              <p style="font-size:14px;color:var(--text-3);margin-bottom:24px">Enter 3 values — we fetch the weather and return your predicted consumption.</p>
+
+              <!-- EMPTY state -->
+              <template x-if="state()==='empty'">
+                <div>
+                  <div class="card" style="margin-bottom:16px">
+                    <div class="field">
+                      <label>Lights usage (Wh)</label>
+                      <input type="number" min="0" placeholder="0" x-model="form.lights" inputmode="numeric">
+                    </div>
+                    <div class="field">
+                      <label>Room temperature (°C)</label>
+                      <input type="number" step="0.1" placeholder="24.0" x-model="form.t1" inputmode="decimal">
+                    </div>
+                    <div class="field" style="margin-bottom:20px">
+                      <label>Your city</label>
+                      <input type="text" placeholder="Lagos" x-model="form.location">
+                    </div>
+                    <button class="btn btn-primary" style="width:100%" @click="submitSimple()">Get prediction</button>
+                  </div>
+                  <div style="padding:48px 24px;text-align:center;background:var(--bg-elevated);border-radius:var(--r-lg);border:2px dashed var(--border)">
+                    <div style="font-size:40px;margin-bottom:12px">📭</div>
+                    <div style="font-size:15px;font-weight:600;margin-bottom:6px">No predictions yet</div>
+                    <div style="font-size:13px;color:var(--text-3)">Fill in the form to get your first one.</div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- LOADING state -->
+              <template x-if="state()==='loading'">
+                <div>
+                  <div class="card" style="margin-bottom:16px">
+                    <div class="field"><label>Lights usage (Wh)</label><input type="number" value="0" disabled style="background:var(--surface)"></div>
+                    <div class="field"><label>Room temperature (°C)</label><input type="number" value="24.5" disabled style="background:var(--surface)"></div>
+                    <div class="field" style="margin-bottom:20px"><label>Your city</label><input type="text" value="Lagos" disabled style="background:var(--surface)"></div>
+                    <button class="btn btn-primary" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px" disabled>
+                      <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><circle cx="12" cy="12" r="9" stroke-dasharray="40 20"/></svg>
+                      Fetching weather…
+                    </button>
+                  </div>
+                  <div class="skel" style="height:160px;margin-bottom:16px"></div>
+                  <div class="skel" style="height:120px"></div>
+                </div>
+              </template>
+
+              <!-- ERROR state -->
+              <template x-if="state()==='error'">
+                <div>
+                  <div class="card" style="margin-bottom:16px">
+                    <div class="field"><label>Lights usage (Wh)</label><input type="number" value="0" x-model="form.lights"></div>
+                    <div class="field"><label>Room temperature (°C)</label><input type="number" value="24.5" x-model="form.t1"></div>
+                    <div class="field" style="margin-bottom:20px"><label>Your city</label><input type="text" x-model="form.location"></div>
+                    <button class="btn btn-primary" style="width:100%" @click="submitSimple()">Get prediction</button>
+                  </div>
+                  <div class="inline-err" style="margin-bottom:16px">
+                    ⚠️ <span>Couldn't fetch weather for "<strong x-text="form.location||'Lagos'"></strong>". Check the city name and try again.</span>
+                    <button class="btn btn-ghost" style="margin-left:auto;font-size:13px;white-space:nowrap" @click="forcedState=null">Retry</button>
+                  </div>
+                  <div style="padding:32px 24px;text-align:center;background:var(--bg-elevated);border-radius:var(--r-lg)">
+                    <div style="font-size:13px;color:var(--text-3)">Last successful result shown below</div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- OFFLINE state -->
+              <template x-if="state()==='offline'">
+                <div>
+                  <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--r-md);padding:10px 14px;font-size:13px;color:#92400E;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+                    📡 You're offline — connect to get a new prediction.
+                  </div>
+                  <div class="card" style="margin-bottom:16px;opacity:.6">
+                    <div class="field"><label>Lights usage (Wh)</label><input type="number" disabled value="0" style="background:var(--surface)"></div>
+                    <div class="field"><label>Room temperature (°C)</label><input type="number" disabled value="24.5" style="background:var(--surface)"></div>
+                    <div class="field" style="margin-bottom:20px"><label>Your city</label><input type="text" disabled value="Lagos" style="background:var(--surface)"></div>
+                    <button class="btn btn-primary" style="width:100%" disabled>Get prediction</button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- POPULATED / PARTIAL state -->
+              <template x-if="state()==='populated'||state()==='partial'">
+                <div>
+                  <!-- Form -->
+                  <div class="card" style="margin-bottom:16px">
+                    <div class="field">
+                      <label>Lights usage (Wh)</label>
+                      <input type="number" min="0" placeholder="0" x-model="form.lights" inputmode="numeric">
+                    </div>
+                    <div class="field">
+                      <label>Room temperature (°C)</label>
+                      <input type="number" step="0.1" placeholder="24.0" x-model="form.t1" inputmode="decimal">
+                    </div>
+                    <div class="field" style="margin-bottom:20px">
+                      <label>Your city</label>
+                      <input type="text" placeholder="Lagos" x-model="form.location">
+                    </div>
+                    <button class="btn btn-primary" style="width:100%" @click="submitSimple()">Get prediction</button>
+                  </div>
+
+                  <!-- Result card -->
+                  <div style="background:linear-gradient(135deg,var(--brand-light) 0%,#fff 100%);border:1px solid #99F6E4;border-radius:var(--r-xl);padding:20px;margin-bottom:16px">
+                    <div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Your prediction</div>
+                    <div style="font-size:44px;font-weight:800;color:var(--brand);line-height:1">89 <span style="font-size:20px;font-weight:500">Wh</span></div>
+                    <div style="font-size:16px;color:var(--text-2);margin:4px 0 12px">0.089 kWh</div>
+                    <div style="font-size:28px;font-weight:700;color:var(--text);margin-bottom:16px">₦6.05</div>
+                    <div style="border-top:1px solid #99F6E4;padding-top:14px">
+                      <div style="font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:10px">WEATHER USED</div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div style="font-size:12px;color:var(--text-2)">🌡 Outside temp <strong>31.4°C</strong></div>
+                        <div style="font-size:12px;color:var(--text-2)">💧 Humidity <strong>82%</strong></div>
+                        <div style="font-size:12px;color:var(--text-2)">💨 Wind <strong>4.2 m/s</strong></div>
+                        <div style="font-size:12px;color:var(--text-2)">👁 Visibility <strong>8.3 km</strong></div>
+                        <div style="font-size:12px;color:var(--text-2)">🌫 Dew point <strong>27.8°C</strong></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Partial error for history -->
+                  <template x-if="state()==='partial'">
+                    <div class="inline-err" style="margin-bottom:12px;font-size:13px">
+                      ⚠️ Couldn't load history.
+                      <button class="btn btn-ghost" style="font-size:12px;margin-left:auto" @click="forcedState=null">Retry</button>
+                    </div>
+                  </template>
+
+                  <!-- History table -->
+                  <template x-if="state()==='populated'">
+                    <div>
+                      <div style="font-size:14px;font-weight:600;margin-bottom:10px">Recent predictions</div>
+                      <table class="hist-table">
+                        <thead><tr><th>Time</th><th>Wh</th><th>kWh</th><th>Cost</th></tr></thead>
+                        <tbody>
+                          <template x-for="row in mockData.simpleHistory" :key="row.id">
+                            <tr>
+                              <td x-text="row.ts"></td>
+                              <td style="font-weight:600" x-text="row.wh"></td>
+                              <td x-text="row.kwh"></td>
+                              <td style="color:var(--brand);font-weight:600" x-text="'₦'+row.ngn"></td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- ============================================================ -->
+        <!-- SCREEN: DASHBOARD (Smart Home) -->
+        <!-- ============================================================ -->
+        <template x-if="currentScreen==='dashboard'">
+          <div class="screen-enter" style="min-height:100%">
+            <nav class="topnav">
+              <span class="logo">Diagonally <span>Energy</span></span>
+              <div class="nav-links">
+                <button class="nav-link" @click="go('/')">Home</button>
+                <button class="nav-link" @click="go('/simple')">Basic tier</button>
+                <button class="nav-link active">Dashboard</button>
+                <button class="nav-link" @click="go('/forecast')">Forecast</button>
+              </div>
+              <button class="hamburger" @click="navOpen=!navOpen" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+            </nav>
+
+            <div style="padding:20px">
+              <!-- Title + status strip -->
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+                <h1 style="font-size:20px;font-weight:700">Smart Home Dashboard</h1>
+                <template x-if="state()==='populated'||state()==='partial'">
+                  <div style="font-size:12px;color:var(--text-3);text-align:right">
+                    <div>Last updated <strong style="color:var(--text-2)">3 min ago</strong></div>
+                    <div>Auto-refreshes every 15 min</div>
+                  </div>
+                </template>
+              </div>
+
+              <!-- EMPTY state -->
+              <template x-if="state()==='empty'">
+                <div style="padding:60px 24px;text-align:center;background:var(--bg-elevated);border-radius:var(--r-xl);border:2px dashed var(--border)">
+                  <div style="font-size:48px;margin-bottom:16px">⏳</div>
+                  <div style="font-size:16px;font-weight:600;margin-bottom:8px">Waiting for first reading</div>
+                  <div style="font-size:14px;color:var(--text-3);line-height:1.6">The scheduler submits a prediction every 15 minutes.<br>Check back shortly.</div>
+                </div>
+              </template>
+
+              <!-- LOADING state -->
+              <template x-if="state()==='loading'">
+                <div>
+                  <div class="skel" style="height:120px;margin-bottom:16px"></div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+                    <template x-for="i in 9"><div class="skel" style="height:72px"></div></template>
+                  </div>
+                  <div class="skel" style="height:60px;margin-bottom:16px"></div>
+                  <div class="skel" style="height:160px"></div>
+                </div>
+              </template>
+
+              <!-- ERROR state -->
+              <template x-if="state()==='error'">
+                <div class="inline-err" style="margin-bottom:16px">
+                  ⚠️ Couldn't load the latest prediction. Check your connection.
+                  <button class="btn btn-ghost" style="font-size:13px;margin-left:auto" @click="forcedState=null">Retry</button>
+                </div>
+              </template>
+
+              <!-- OFFLINE state -->
+              <template x-if="state()==='offline'">
+                <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--r-md);padding:10px 14px;font-size:13px;color:#92400E;margin-bottom:16px">
+                  📡 Offline — showing last known reading from <strong>3 hours ago</strong>.
+                </div>
+              </template>
+
+              <!-- POPULATED / PARTIAL / OFFLINE -->
+              <template x-if="state()==='populated'||state()==='partial'||state()==='offline'">
+                <div>
+                  <!-- Hero prediction -->
+                  <div class="hero-pred" style="margin-bottom:16px">
+                    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center">
+                      <div>
+                        <div style="font-size:11px;font-weight:600;color:var(--brand);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Predicted consumption</div>
+                        <div style="font-size:48px;font-weight:800;color:var(--brand);line-height:1">127 <span style="font-size:22px;font-weight:500">Wh</span></div>
+                        <div style="font-size:16px;color:var(--text-2);margin-top:4px">0.127 kWh</div>
+                      </div>
+                      <div style="width:1px;background:#99F6E4;height:60px;margin:0 auto"></div>
+                      <div style="text-align:right">
+                        <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Estimated cost</div>
+                        <div style="font-size:36px;font-weight:800;color:var(--text);line-height:1">₦8.64</div>
+                        <div style="font-size:12px;color:var(--text-3);margin-top:4px">at ₦68/kWh</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Sensor grid -->
+                  <div style="margin-bottom:16px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                      <div style="font-size:14px;font-weight:600">Room sensors</div>
+                      <button class="btn btn-ghost" style="font-size:12px;padding:4px 10px;min-height:auto;height:auto" @click="sensorsExpanded=!sensorsExpanded" x-text="sensorsExpanded?'Hide':'Show all'"></button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                      <template x-for="room in (sensorsExpanded?mockData.sensors:mockData.sensors.slice(0,3))" :key="room.name">
+                        <div class="sensor-tile">
+                          <div class="room" x-text="room.name"></div>
+                          <div class="temp" x-text="room.temp+'°C'"></div>
+                          <div class="hum" x-text="room.hum+'%'"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- Outside conditions -->
+                  <div style="background:var(--bg-elevated);border-radius:var(--r-lg);padding:14px;margin-bottom:16px">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Outside conditions</div>
+                    <div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:4px">
+                      <template x-for="cond in mockData.outside" :key="cond.label">
+                        <div style="text-align:center;min-width:64px">
+                          <div style="font-size:18px;margin-bottom:4px" x-text="cond.icon"></div>
+                          <div style="font-size:13px;font-weight:700;color:var(--text)" x-text="cond.val"></div>
+                          <div style="font-size:10px;color:var(--text-3)" x-text="cond.label"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- Partial history error -->
+                  <template x-if="state()==='partial'">
+                    <div class="inline-err" style="margin-bottom:12px;font-size:13px">
+                      ⚠️ Couldn't load prediction history.
+                      <button class="btn btn-ghost" style="font-size:12px;margin-left:auto" @click="forcedState=null">Retry</button>
+                    </div>
+                  </template>
+
+                  <!-- History chart placeholder + table -->
+                  <template x-if="state()==='populated'||state()==='offline'">
+                    <div>
+                      <div style="font-size:14px;font-weight:600;margin-bottom:10px">Last 24 hours</div>
+                      <!-- Mini line chart SVG -->
+                      <div style="background:var(--bg-elevated);border-radius:var(--r-lg);padding:16px;margin-bottom:12px">
+                        <svg viewBox="0 0 400 80" style="width:100%;height:80px">
+                          <defs>
+                            <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stop-color="#0D9488" stop-opacity=".25"/>
+                              <stop offset="100%" stop-color="#0D9488" stop-opacity="0"/>
+                            </linearGradient>
+                          </defs>
+                          <path :d="dashboardChartArea()" fill="url(#lineGrad)"/>
+                          <path :d="dashboardChartLine()" fill="none" stroke="#0D9488" stroke-width="2" stroke-linejoin="round"/>
+                        </svg>
+                        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-3);margin-top:4px;padding:0 2px">
+                          <span>12h ago</span><span>9h ago</span><span>6h ago</span><span>3h ago</span><span>Now</span>
+                        </div>
+                      </div>
+                      <table class="hist-table">
+                        <thead><tr><th>Time</th><th>Wh</th><th>kWh</th><th>Cost</th></tr></thead>
+                        <tbody>
+                          <template x-for="row in mockData.dashHistory" :key="row.id">
+                            <tr>
+                              <td x-text="row.ts"></td>
+                              <td style="font-weight:600" x-text="row.wh"></td>
+                              <td x-text="row.kwh"></td>
+                              <td style="color:var(--brand);font-weight:600" x-text="'₦'+row.ngn"></td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- ============================================================ -->
+        <!-- SCREEN: FORECAST -->
+        <!-- ============================================================ -->
+        <template x-if="currentScreen==='forecast'">
+          <div class="screen-enter" style="min-height:100%">
+            <nav class="topnav">
+              <span class="logo">Diagonally <span>Energy</span></span>
+              <div class="nav-links">
+                <button class="nav-link" @click="go('/')">Home</button>
+                <button class="nav-link" @click="go('/simple')">Basic tier</button>
+                <button class="nav-link" @click="go('/dashboard')">Dashboard</button>
+                <button class="nav-link active">Forecast</button>
+              </div>
+              <button class="hamburger" @click="navOpen=!navOpen" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+            </nav>
+
+            <div style="padding:20px">
+              <h1 style="font-size:20px;font-weight:700;margin-bottom:16px">Energy forecast</h1>
+
+              <!-- Location row -->
+              <div style="display:flex;gap:8px;margin-bottom:20px">
+                <input type="text" x-model="forecastCity" placeholder="Enter your city" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--r-md);font-size:15px;min-height:44px">
+                <button class="btn btn-primary" style="padding:0 18px;font-size:14px;white-space:nowrap" @click="loadForecast()">Get forecast</button>
+              </div>
+
+              <!-- EMPTY state (no location yet) -->
+              <template x-if="state()==='empty'">
+                <div style="padding:60px 24px;text-align:center;background:var(--bg-elevated);border-radius:var(--r-xl);border:2px dashed var(--border)">
+                  <div style="font-size:48px;margin-bottom:16px">📅</div>
+                  <div style="font-size:16px;font-weight:600;margin-bottom:8px">Enter your city to see your forecast</div>
+                  <div style="font-size:14px;color:var(--text-3)">We'll show hourly and daily predictions with your projected monthly bill.</div>
+                </div>
+              </template>
+
+              <!-- LOADING state -->
+              <template x-if="state()==='loading'">
+                <div>
+                  <div class="skel" style="height:180px;margin-bottom:16px;border-radius:var(--r-lg)"></div>
+                  <div class="skel" style="height:180px;margin-bottom:16px;border-radius:var(--r-lg)"></div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                    <div class="skel" style="height:100px;border-radius:var(--r-lg)"></div>
+                    <div class="skel" style="height:100px;border-radius:var(--r-lg)"></div>
+                    <div class="skel" style="height:100px;border-radius:var(--r-lg)"></div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- ERROR state -->
+              <template x-if="state()==='error'">
+                <div class="inline-err">
+                  ⚠️ Couldn't get forecast for "<strong x-text="forecastCity||'Lagos'"></strong>". Check the city name and try again.
+                  <button class="btn btn-ghost" style="font-size:13px;margin-left:auto" @click="forcedState=null">Retry</button>
+                </div>
+              </template>
+
+              <!-- PARTIAL state -->
+              <template x-if="state()==='partial'">
+                <div>
+                  <div class="inline-err" style="margin-bottom:16px;font-size:13px">
+                    ⚠️ 7-day forecast unavailable — showing 24-hour forecast only.
+                    <button class="btn btn-ghost" style="font-size:12px;margin-left:auto" @click="forcedState=null">Retry</button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- POPULATED / PARTIAL -->
+              <template x-if="state()==='populated'||state()==='partial'">
+                <div>
+                  <!-- 24h forecast area chart -->
+                  <div class="card" style="margin-bottom:16px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                      <div style="font-size:14px;font-weight:600">Next 24 hours</div>
+                      <div style="display:flex;gap:6px">
+                        <span class="pill pill-amber">⬆ Peak: 8pm · 213 Wh</span>
+                        <span class="pill pill-teal">⬇ Low: 4am · 58 Wh</span>
+                      </div>
+                    </div>
+                    <!-- SVG area chart -->
+                    <div style="position:relative">
+                      <svg viewBox="0 0 580 140" style="width:100%;height:140px;overflow:visible">
+                        <defs>
+                          <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#0D9488" stop-opacity=".3"/>
+                            <stop offset="100%" stop-color="#0D9488" stop-opacity="0"/>
+                          </linearGradient>
+                        </defs>
+                        <!-- Confidence band -->
+                        <path :d="bandPath()" fill="#0D9488" fill-opacity=".08"/>
+                        <!-- Area fill -->
+                        <path :d="areaPath()" fill="url(#areaFill)"/>
+                        <!-- Line -->
+                        <path :d="linePath()" fill="none" stroke="#0D9488" stroke-width="2.5" stroke-linejoin="round"/>
+                        <!-- Peak dot -->
+                        <circle :cx="peakX()" :cy="peakY()" r="5" fill="#F59E0B" stroke="#fff" stroke-width="2"/>
+                      </svg>
+                      <!-- X-axis labels -->
+                      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-3);margin-top:4px;padding:0 4px">
+                        <span>12am</span><span>4am</span><span>8am</span><span>12pm</span><span>4pm</span><span>8pm</span><span>11pm</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 7d forecast bar chart (only in populated) -->
+                  <template x-if="state()==='populated'">
+                    <div class="card" style="margin-bottom:16px">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                        <div style="font-size:14px;font-weight:600">Next 7 days</div>
+                        <span class="pill pill-amber">⬆ Peak: Saturday</span>
+                      </div>
+                      <!-- SVG bar chart -->
+                      <svg viewBox="0 0 580 130" style="width:100%;height:130px">
+                        <template x-for="(bar,i) in mockData.daily7d" :key="bar.day">
+                          <g>
+                            <rect
+                              :x="i*82+8" y="0"
+                              :height="barH(bar.wh)"
+                              :y="120-barH(bar.wh)"
+                              width="66"
+                              :fill="bar.peak?'#F59E0B':'#0D9488'"
+                              rx="4"
+                            />
+                            <text
+                              :x="i*82+41"
+                              y="128"
+                              text-anchor="middle"
+                              font-size="11"
+                              :fill="bar.peak?'#92400E':'#6B7280'"
+                              :font-weight="bar.peak?'700':'400'"
+                              x-text="bar.day"
+                            />
+                          </g>
+                        </template>
+                      </svg>
+                      <div style="font-size:12px;color:var(--text-3);margin-top:8px;text-align:center">
+                        Peak day: <strong style="color:#92400E">Saturday</strong> · Lowest: <strong>Wednesday</strong>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- Monthly bill projection (only in populated) -->
+                  <template x-if="state()==='populated'">
+                    <div class="card">
+                      <div style="font-size:14px;font-weight:600;margin-bottom:4px">Monthly bill projection</div>
+                      <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Based on 7-day forecast extrapolated to full month</div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">
+                        <div class="bill-col">
+                          <div class="label">Best case</div>
+                          <div class="amount" style="font-size:18px;color:var(--text-2)">₦12,450</div>
+                        </div>
+                        <div class="bill-col featured" style="background:var(--brand-light);border-left:1px solid var(--border);border-right:1px solid var(--border)">
+                          <div class="label" style="color:var(--brand)">Most likely</div>
+                          <div class="amount">₦15,680</div>
+                        </div>
+                        <div class="bill-col">
+                          <div class="label">Worst case</div>
+                          <div class="amount" style="font-size:18px;color:var(--text-2)">₦19,230</div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <!-- OFFLINE state -->
+              <template x-if="state()==='offline'">
+                <div>
+                  <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--r-md);padding:10px 14px;font-size:13px;color:#92400E;margin-bottom:16px">
+                    📡 Showing forecast from <strong>yesterday at 14:32</strong>. Connect to refresh.
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- ===== TOAST ===== -->
+        <template x-if="toast">
+          <div class="toast" x-text="toast"></div>
+        </template>
+
+      </div><!-- /screen -->
+    </div><!-- /frame -->
+  </main>
+
+  <!-- ===== RIGHT PANEL (Spec notes) ===== -->
+  <aside class="panel panel-r">
+    <h3>Spec notes</h3>
+    <div x-html="notes()" style="font-size:12px;line-height:1.7;color:#D4D4D8"></div>
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #3F3F46">
+      <h3>How to use</h3>
+      <ul style="padding-left:16px;font-size:11px;color:#A1A1AA;line-height:1.8">
+        <li>Click inside the device to navigate</li>
+        <li>Use "Jump to screen" to go anywhere</li>
+        <li>Use "Force state" to see empty, error, loading…</li>
+        <li>Resize device to test responsive layout</li>
+        <li>← Back and ↻ Reset in Controls</li>
+      </ul>
+    </div>
+  </aside>
+
+</div><!-- /shell -->
+
+<script>
+function app() {
+  return {
+    device: 'mobile',
+    forcedState: null,
+    route: '/',
+    history: ['/'],
+    navOpen: false,
+    toast: null,
+    sensorsExpanded: false,
+    forecastCity: 'Lagos',
+    form: { lights: '', t1: '', location: 'Lagos' },
+
+    screens: [
+      { id:'landing',   name:'🏠 Landing',         route:'/'          },
+      { id:'simple',    name:'📊 Basic tier',       route:'/simple'    },
+      { id:'dashboard', name:'📡 Smart Home Dashboard', route:'/dashboard' },
+      { id:'forecast',  name:'📅 Forecast',         route:'/forecast'  },
+    ],
+
+    // ===== MOCK DATA =====
+    mockData: {
+      simpleHistory: [
+        { id:1,  ts:'2m ago',      wh:89,  kwh:'0.089', ngn:'6.05'  },
+        { id:2,  ts:'18m ago',     wh:102, kwh:'0.102', ngn:'6.94'  },
+        { id:3,  ts:'41m ago',     wh:76,  kwh:'0.076', ngn:'5.17'  },
+        { id:4,  ts:'1h ago',      wh:94,  kwh:'0.094', ngn:'6.39'  },
+        { id:5,  ts:'3h ago',      wh:118, kwh:'0.118', ngn:'8.02'  },
+        { id:6,  ts:'Yesterday',   wh:83,  kwh:'0.083', ngn:'5.64'  },
+        { id:7,  ts:'Yesterday',   wh:71,  kwh:'0.071', ngn:'4.83'  },
+        { id:8,  ts:'2 days ago',  wh:107, kwh:'0.107', ngn:'7.28'  },
+        { id:9,  ts:'2 days ago',  wh:96,  kwh:'0.096', ngn:'6.53'  },
+        { id:10, ts:'3 days ago',  wh:134, kwh:'0.134', ngn:'9.11'  },
+      ],
+      dashHistory: [
+        { id:1,  ts:'Just now',   wh:127, kwh:'0.127', ngn:'8.64'  },
+        { id:2,  ts:'15m ago',    wh:119, kwh:'0.119', ngn:'8.09'  },
+        { id:3,  ts:'30m ago',    wh:143, kwh:'0.143', ngn:'9.72'  },
+        { id:4,  ts:'45m ago',    wh:156, kwh:'0.156', ngn:'10.61' },
+        { id:5,  ts:'1h ago',     wh:138, kwh:'0.138', ngn:'9.38'  },
+        { id:6,  ts:'1h 15m ago', wh:112, kwh:'0.112', ngn:'7.62'  },
+        { id:7,  ts:'1h 30m ago', wh:98,  kwh:'0.098', ngn:'6.66'  },
+        { id:8,  ts:'2h ago',     wh:87,  kwh:'0.087', ngn:'5.92'  },
+        { id:9,  ts:'2h 15m ago', wh:74,  kwh:'0.074', ngn:'5.03'  },
+        { id:10, ts:'3h ago',     wh:63,  kwh:'0.063', ngn:'4.28'  },
+      ],
+      sensors: [
+        { name:'Kitchen',      temp:26.4, hum:62 },
+        { name:'Living room',  temp:25.1, hum:58 },
+        { name:'Laundry',      temp:27.8, hum:71 },
+        { name:'Office',       temp:23.9, hum:55 },
+        { name:'Bathroom',     temp:28.2, hum:76 },
+        { name:'Outside N.',   temp:31.4, hum:82 },
+        { name:'Ironing',      temp:25.6, hum:57 },
+        { name:'Teen room',    temp:24.3, hum:54 },
+        { name:'Parents',      temp:23.7, hum:51 },
+      ],
+      outside: [
+        { icon:'🌡', val:'31.4°C',  label:'Outside'   },
+        { icon:'💧', val:'82%',     label:'Humidity'  },
+        { icon:'💨', val:'4.2 m/s', label:'Wind'      },
+        { icon:'👁', val:'8.3 km',  label:'Visibility'},
+        { icon:'🌫', val:'27.8°C',  label:'Dew point' },
+      ],
+      // 24-hour forecast: Wh per 10-min interval aggregated to hourly
+      hourly24: [
+        58,64,61,59,57,60,68,82,104,128,141,137,
+        132,138,145,149,158,172,198,213,196,174,148,121
+      ],
+      hourlyUpper: [
+        72,79,75,73,70,75,84,101,128,158,174,169,
+        163,170,179,184,195,212,244,262,242,215,182,149
+      ],
+      hourlyLower: [
+        44,49,47,45,44,45,52,63,80,98,108,105,
+        101,106,111,114,121,132,152,164,150,133,114,93
+      ],
+      daily7d: [
+        { day:'Mon', wh:2450, peak:false },
+        { day:'Tue', wh:2830, peak:false },
+        { day:'Wed', wh:2170, peak:false },
+        { day:'Thu', wh:2680, peak:false },
+        { day:'Fri', wh:2940, peak:false },
+        { day:'Sat', wh:3120, peak:true  },
+        { day:'Sun', wh:2710, peak:false },
+      ],
+      // Mini dashboard history (last 13 readings for sparkline)
+      sparkline: [112,98,87,74,63,78,91,107,119,132,143,138,127],
+    },
+
+    // ===== ROUTING =====
+    init() {
+      const hash = window.location.hash.replace(/^#/,'') || '/';
+      this.route = hash;
+      window.addEventListener('hashchange', () => {
+        this.route = window.location.hash.replace(/^#/,'') || '/';
+        this.navOpen = false;
+        this.forcedState = null;
+      });
+    },
+
+    go(r) {
+      this.history.push(r);
+      this.route = r;
+      window.location.hash = r;
+      this.navOpen = false;
+      this.forcedState = null;
+    },
+
+    back() {
+      if (this.history.length > 1) {
+        this.history.pop();
+        const prev = this.history[this.history.length-1];
+        this.route = prev;
+        window.location.hash = prev;
+      } else {
+        this.go('/');
+      }
+    },
+
+    reset() {
+      this.history = ['/'];
+      this.route = '/';
+      this.forcedState = null;
+      this.navOpen = false;
+      this.sensorsExpanded = false;
+      this.toast = null;
+      window.location.hash = '/';
+    },
+
+    get currentScreen() {
+      if (this.route === '/' || this.route === '') return 'landing';
+      if (this.route.startsWith('/simple')) return 'simple';
+      if (this.route.startsWith('/dashboard')) return 'dashboard';
+      if (this.route.startsWith('/forecast')) return 'forecast';
+      return 'landing';
+    },
+
+    state() {
+      if (this.forcedState) return this.forcedState;
+      // Default state per screen
+      if (this.currentScreen === 'landing') return 'populated';
+      if (this.currentScreen === 'simple') return 'populated';
+      if (this.currentScreen === 'dashboard') return 'populated';
+      if (this.currentScreen === 'forecast') return 'populated';
+      return 'populated';
+    },
+
+    showToast(msg, ms=2500) {
+      this.toast = msg;
+      setTimeout(() => { this.toast = null; }, ms);
+    },
+
+    submitSimple() {
+      if (!this.form.lights && this.form.lights !== 0) {
+        this.showToast('Enter lights usage (can be 0)');
+        return;
+      }
+      this.forcedState = 'loading';
+      setTimeout(() => {
+        this.forcedState = null;
+        this.showToast('Prediction saved.');
+      }, 1800);
+    },
+
+    loadForecast() {
+      if (!this.forecastCity) return;
+      this.forcedState = 'loading';
+      setTimeout(() => {
+        this.forcedState = null;
+        this.showToast('Forecast loaded for ' + this.forecastCity);
+      }, 1600);
+    },
+
+    // ===== SVG CHART HELPERS =====
+    // Area chart: viewBox 580 x 140, padding 10/10/10/10
+    _chartCoords(data, min, max, svgW=560, svgH=120, offX=10, offY=10) {
+      return data.map((v, i) => ({
+        x: offX + (i / (data.length - 1)) * svgW,
+        y: offY + svgH - ((v - min) / (max - min)) * svgH
+      }));
+    },
+    linePath() {
+      const pts = this._chartCoords(this.mockData.hourly24, 40, 270);
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+    },
+    areaPath() {
+      const pts = this._chartCoords(this.mockData.hourly24, 40, 270);
+      const last = pts[pts.length-1], first = pts[0];
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')
+        + ` L ${last.x.toFixed(1)},130 L ${first.x.toFixed(1)},130 Z`;
+    },
+    bandPath() {
+      const upper = this._chartCoords(this.mockData.hourlyUpper, 40, 270);
+      const lower = this._chartCoords(this.mockData.hourlyLower, 40, 270);
+      return 'M ' + upper.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')
+        + ' L ' + [...lower].reverse().map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ') + ' Z';
+    },
+    peakX() {
+      const pts = this._chartCoords(this.mockData.hourly24, 40, 270);
+      const peakIdx = this.mockData.hourly24.indexOf(Math.max(...this.mockData.hourly24));
+      return pts[peakIdx].x.toFixed(1);
+    },
+    peakY() {
+      const pts = this._chartCoords(this.mockData.hourly24, 40, 270);
+      const peakIdx = this.mockData.hourly24.indexOf(Math.max(...this.mockData.hourly24));
+      return pts[peakIdx].y.toFixed(1);
+    },
+    barH(wh) {
+      return Math.round((wh / 3500) * 110);
+    },
+
+    // Dashboard sparkline
+    dashboardChartLine() {
+      const d = this.mockData.sparkline;
+      const min = Math.min(...d) - 10, max = Math.max(...d) + 10;
+      const pts = d.map((v, i) => ({
+        x: 10 + (i / (d.length-1)) * 380,
+        y: 10 + 60 - ((v - min) / (max - min)) * 60
+      }));
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+    },
+    dashboardChartArea() {
+      const d = this.mockData.sparkline;
+      const min = Math.min(...d) - 10, max = Math.max(...d) + 10;
+      const pts = d.map((v, i) => ({
+        x: 10 + (i / (d.length-1)) * 380,
+        y: 10 + 60 - ((v - min) / (max - min)) * 60
+      }));
+      const last = pts[pts.length-1], first = pts[0];
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')
+        + ` L ${last.x.toFixed(1)},75 L ${first.x.toFixed(1)},75 Z`;
+    },
+
+    // ===== SPEC NOTES =====
+    notes() {
+      const n = {
+        landing: `<strong>Landing — index.html</strong><br><br>
+          <b>Purpose:</b> Orient user, explain tiers, route them.<br>
+          <b>Primary action:</b> Click a tier card CTA.<br>
+          <b>Entry:</b> Direct URL, any nav "Home" click.<br>
+          <b>Exit:</b> simple.html, dashboard.html.<br><br>
+          <b>States:</b> Static only — no API calls.<br><br>
+          <b>Components:</b> NavBar, TierCard ×2, Button, HowItWorksStrip.`,
+
+        simple: `<strong>Basic tier — simple.html</strong><br><br>
+          <b>Purpose:</b> 3-input form → predicted Wh + NGN cost.<br>
+          <b>Primary action:</b> Fill form → Get prediction.<br>
+          <b>Inputs:</b> lights (Wh), T1 (°C), location (city).<br><br>
+          <b>States:</b><br>
+          • <b>Empty</b> — no history, form shown<br>
+          • <b>Loading</b> — spinner on button, skeleton below<br>
+          • <b>Error</b> — inline error, city not found<br>
+          • <b>Partial</b> — result OK, history failed<br>
+          • <b>Populated</b> — result card + weather factors + history<br>
+          • <b>Offline</b> — form disabled<br><br>
+          <b>API:</b> POST /api/v1/predict/simple<br>
+          GET /api/v1/predictions?tier=simple&limit=10`,
+
+        dashboard: `<strong>Smart Home Dashboard — dashboard.html</strong><br><br>
+          <b>Purpose:</b> Show latest auto-fetched prediction. Read-only.<br>
+          <b>Primary action:</b> Read the numbers (passive).<br>
+          <b>Entry:</b> Landing CTA, nav bar, bookmark.<br><br>
+          <b>States:</b><br>
+          • <b>Empty</b> — scheduler hasn't run yet<br>
+          • <b>Loading</b> — skeleton hero + sensor grid<br>
+          • <b>Error</b> — inline retry<br>
+          • <b>Partial</b> — prediction OK, history failed<br>
+          • <b>Populated</b> — hero card + 9 sensors + outside strip + chart<br>
+          • <b>Offline</b> — stale data banner<br><br>
+          <b>Auto-refresh:</b> setInterval every 15 min<br>
+          <b>API:</b> GET /api/v1/predictions?tier=full&limit=24`,
+
+        forecast: `<strong>Forecast — forecast.html</strong><br><br>
+          <b>Purpose:</b> 7-day forecast + monthly bill projection.<br>
+          <b>Primary action:</b> Enter city → Get forecast.<br><br>
+          <b>States:</b><br>
+          • <b>Empty</b> — no city entered<br>
+          • <b>Loading</b> — skeleton charts<br>
+          • <b>Error</b> — city not found<br>
+          • <b>Partial</b> — 24h works, 7d failed<br>
+          • <b>Populated</b> — area chart + bar chart + bill card<br>
+          • <b>Offline</b> — stale forecast banner<br><br>
+          <b>API:</b> GET /api/v1/forecast/24h?location=[city]<br>
+          GET /api/v1/forecast/7d?location=[city]<br><br>
+          <b>Chart tokens:</b> teal #0D9488, amber #F59E0B (peak)`,
+      };
+      return n[this.currentScreen] || '<em>No notes for this screen.</em>';
+    },
+  }
+}
+</script>
+</body>
+</html>
