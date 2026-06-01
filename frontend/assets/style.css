@@ -1,0 +1,14 @@
+/* Custom styles for Diagonally Energy Prediction frontend */
+
+/* Ensure sensor grid tiles don't overflow on very small screens */
+#sensor-grid > [data-room] {
+  min-width: 0;
+}
+
+/* Outside conditions strip: stack vertically on narrow screens */
+@media (max-width: 639px) {
+  .outside-conditions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
