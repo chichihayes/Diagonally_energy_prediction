@@ -414,6 +414,75 @@ function render24hChart(data, canvasId) {
   });
 }
 
+async function fetchForecast7d(location) {
+  const res = await fetch(`/api/v1/forecast/7d?location=${encodeURIComponent(location)}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Server error ${res.status}`);
+  }
+  return res.json();
+}
+
+let chart7d = null;
+
+function render7dChart(data, canvasId) {
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const labels = data.forecast.map(p => {
+    const d = new Date(p.date);
+    return dayNames[d.getUTCDay()];
+  });
+
+  const barColors = labels.map(day =>
+    day === data.peak_day ? '#f59e0b' : '#6366f1'
+  );
+
+  if (chart7d) chart7d.destroy();
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  chart7d = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Daily Wh',
+        data: data.forecast.map(p => p.predicted_wh),
+        backgroundColor: barColors,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Day' } },
+        y: { title: { display: true, text: 'Wh' } },
+      },
+    },
+  });
+}
+
+function formatNGN(amount) {
+  return '₦' + amount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderBillCard(bill) {
+  const card = document.getElementById('bill-card');
+  card.innerHTML = `
+    <div class="grid grid-cols-3 gap-4 text-center">
+      <div class="bg-green-50 rounded-xl p-4">
+        <p class="text-xs text-green-600 font-medium uppercase tracking-wide mb-1">Optimistic</p>
+        <p data-bill="optimistic" class="text-xl font-bold text-green-700">${formatNGN(bill.optimistic_ngn)}</p>
+      </div>
+      <div class="bg-indigo-50 rounded-xl p-5 ring-2 ring-indigo-400">
+        <p class="text-xs text-indigo-600 font-medium uppercase tracking-wide mb-1">Most Likely</p>
+        <p data-bill="most-likely" class="text-2xl font-extrabold text-indigo-700">${formatNGN(bill.most_likely_ngn)}</p>
+      </div>
+      <div class="bg-red-50 rounded-xl p-4">
+        <p class="text-xs text-red-600 font-medium uppercase tracking-wide mb-1">Pessimistic</p>
+        <p data-bill="pessimistic" class="text-xl font-bold text-red-700">${formatNGN(bill.pessimistic_ngn)}</p>
+      </div>
+    </div>
+  `;
+}
+
 if (document.getElementById('forecast-form')) {
   document.getElementById('forecast-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -423,13 +492,25 @@ if (document.getElementById('forecast-form')) {
     const errorEl = document.getElementById('forecast-error');
     errorEl.classList.add('hidden');
     errorEl.textContent = '';
+    ['section-24h', 'section-7d', 'section-bill'].forEach(id =>
+      document.getElementById(id).classList.add('hidden')
+    );
 
     setForecastLoading(true);
     try {
-      const data24h = await fetchForecast24h(location);
+      const [data24h, data7d] = await Promise.all([
+        fetchForecast24h(location),
+        fetchForecast7d(location),
+      ]);
+
       render24hChart(data24h, 'chart-24h');
       document.getElementById('section-24h').classList.remove('hidden');
-      // Issue 010 appends 7d fetch here
+
+      render7dChart(data7d, 'chart-7d');
+      document.getElementById('section-7d').classList.remove('hidden');
+
+      renderBillCard(data7d.projected_month_bill);
+      document.getElementById('section-bill').classList.remove('hidden');
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.remove('hidden');
