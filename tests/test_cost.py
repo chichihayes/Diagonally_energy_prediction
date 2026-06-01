@@ -1,5 +1,49 @@
 import importlib
 import pytest
+from unittest.mock import patch
+
+
+_MOCK_FORECAST = [
+    {"predicted_wh": 6000.0, "lower_wh": 4000.0, "upper_wh": 8000.0},
+    {"predicted_wh": 6100.0, "lower_wh": 4100.0, "upper_wh": 8100.0},
+    {"predicted_wh": 6200.0, "lower_wh": 4200.0, "upper_wh": 8200.0},
+    {"predicted_wh": 6300.0, "lower_wh": 4300.0, "upper_wh": 8300.0},
+    {"predicted_wh": 6400.0, "lower_wh": 4400.0, "upper_wh": 8400.0},
+    {"predicted_wh": 6500.0, "lower_wh": 4500.0, "upper_wh": 8500.0},
+    {"predicted_wh": 6600.0, "lower_wh": 4600.0, "upper_wh": 8600.0},
+]
+
+
+def test_project_monthly_bill_returns_correct_keys():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_MOCK_FORECAST)
+    assert set(result.keys()) == {"optimistic_ngn", "most_likely_ngn", "pessimistic_ngn"}
+
+
+def test_project_monthly_bill_optimistic_ngn_correct():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_MOCK_FORECAST)
+    expected = round(sum(r["lower_wh"] for r in _MOCK_FORECAST) / 1000 * (30 / 7) * 68.00, 2)
+    assert result["optimistic_ngn"] == pytest.approx(expected, abs=0.01)
+
+
+def test_project_monthly_bill_most_likely_ngn_correct():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_MOCK_FORECAST)
+    expected = round(sum(r["predicted_wh"] for r in _MOCK_FORECAST) / 1000 * (30 / 7) * 68.00, 2)
+    assert result["most_likely_ngn"] == pytest.approx(expected, abs=0.01)
+
+
+def test_project_monthly_bill_pessimistic_ngn_correct_and_ordering():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_MOCK_FORECAST)
+    expected = round(sum(r["upper_wh"] for r in _MOCK_FORECAST) / 1000 * (30 / 7) * 68.00, 2)
+    assert result["pessimistic_ngn"] == pytest.approx(expected, abs=0.01)
+    assert result["optimistic_ngn"] <= result["most_likely_ngn"] <= result["pessimistic_ngn"]
 
 
 def test_wh_to_cost_converts_correctly(monkeypatch):
