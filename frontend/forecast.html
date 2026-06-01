@@ -53,6 +53,92 @@
     <div id="bill-card"></div>
   </section>
 
+  <!-- Model performance -->
+  <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6 mb-6">
+    <div id="model-perf-section" class="hidden">
+      <button
+        id="model-perf-toggle"
+        class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+        onclick="document.getElementById('model-perf-body').classList.toggle('hidden')"
+      >
+        <span>Model performance</span>
+        <span class="text-xs text-gray-400">(click to expand)</span>
+      </button>
+      <div id="model-perf-body" class="hidden mt-4 space-y-6">
+        <div>
+          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Regression models (R²)
+          </h3>
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="text-left text-gray-500 border-b">
+                <th class="pb-1 pr-4">Model</th>
+                <th class="pb-1 pr-4">R²</th>
+                <th class="pb-1">Winner</th>
+              </tr>
+            </thead>
+            <tbody id="regression-table-body"></tbody>
+          </table>
+        </div>
+        <div>
+          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Forecast models (MAPE)
+          </h3>
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="text-left text-gray-500 border-b">
+                <th class="pb-1 pr-4">Model</th>
+                <th class="pb-1 pr-4">MAPE</th>
+                <th class="pb-1">Winner</th>
+              </tr>
+            </thead>
+            <tbody id="forecast-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadLeaderboard() {
+      try {
+        const res = await fetch("/api/v1/models/leaderboard");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById("model-perf-section").classList.remove("hidden");
+
+        const regression = [...data.regression].sort((a, b) => b.r2 - a.r2);
+        const rBody = document.getElementById("regression-table-body");
+        regression.forEach(row => {
+          const tr = document.createElement("tr");
+          if (row.winner) tr.style.fontWeight = "bold";
+          tr.innerHTML =
+            `<td class="py-1 pr-4">${row.model}</td>` +
+            `<td class="py-1 pr-4">${row.r2.toFixed(4)}</td>` +
+            `<td class="py-1">${row.winner ? "✓" : ""}</td>`;
+          rBody.appendChild(tr);
+        });
+
+        const forecast = [...data.forecast].sort((a, b) => a.mape - b.mape);
+        const fBody = document.getElementById("forecast-table-body");
+        forecast.forEach(row => {
+          const tr = document.createElement("tr");
+          if (row.winner) tr.style.fontWeight = "bold";
+          tr.innerHTML =
+            `<td class="py-1 pr-4">${row.model}</td>` +
+            `<td class="py-1 pr-4">${row.mape.toFixed(4)}</td>` +
+            `<td class="py-1">${row.winner ? "✓" : ""}</td>`;
+          fBody.appendChild(tr);
+        });
+      } catch (_) {
+        // network error — section stays hidden
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", loadLeaderboard);
+  </script>
+
   <script src="assets/app.js"></script>
 </body>
 </html>
