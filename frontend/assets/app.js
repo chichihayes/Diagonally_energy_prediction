@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     clearErrors();
     document.getElementById('error-container').classList.add('hidden');
+    document.getElementById('result-card').classList.add('hidden');
     const values = getFormValues();
     const errors = validateForm(values);
     if (Object.keys(errors).length > 0) {

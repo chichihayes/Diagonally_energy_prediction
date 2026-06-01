@@ -14,7 +14,9 @@ def get_weather(city: str) -> dict:
         if now - ts < _CACHE_TTL:
             return data
 
-    api_key = os.environ["OPENWEATHERMAP_API_KEY"]
+    api_key = os.getenv("OPENWEATHERMAP_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENWEATHERMAP_API_KEY is not configured")
     url = "https://api.openweathermap.org/data/2.5/weather"
     try:
         resp = requests.get(url, params={"q": city, "appid": api_key, "units": "metric"}, timeout=5)
