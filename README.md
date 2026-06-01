@@ -5,7 +5,7 @@ ML system for real-time electricity consumption prediction via REST API.
 ## Stack
 - Model: scikit-learn (Random Forest / XGBoost)
 - API: FastAPI
-- Dataset: UCI ElectricityLoadDiagrams 2011-2014
+- Dataset: UCI Appliances Energy Prediction (19,735 rows, 28 features)
 
 ## Setup
 ```bash
@@ -34,5 +34,5 @@ pytest tests/
 ```bash
 curl -X POST http://localhost:8000/api/v1/predict \
   -H "Content-Type: application/json" \
-  -d '{"hour":14,"day_of_week":2,"month":6,"is_weekend":0,"lag_1h":0.45,"lag_24h":0.50,"lag_168h":0.48,"rolling_mean_3h":0.47,"rolling_mean_24h":0.49}'
+  -d '{"lights":0,"T1":19.89,"RH_1":47.6,"T2":19.2,"RH_2":44.79,"T3":19.79,"RH_3":44.73,"T_out":6.6,"Windspeed":7.0,"Visibility":63.0,"Tdewpoint":5.3}'
 ```

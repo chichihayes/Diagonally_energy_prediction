@@ -1,11 +1,7 @@
 ﻿# CLAUDE.md â€” Diagonally Energy Prediction
 
 ## What this app is
-Diagonally Energy Prediction is a machine learning system that predicts electricity
-consumption in real time. It ingests time-series energy data, engineers features,
-trains a regression model, and exposes predictions via a REST API. The goal is to
-provide accurate, low-latency electricity usage forecasts for integration into
-energy management dashboards or third-party platforms.
+Diagonally Energy Prediction is a machine learning system that helps homeowners predict their household appliance energy consumption in real time. It takes room temperature, humidity and weather readings as input, runs them through a trained regression model, and returns a predicted energy usage in watt-hours via a REST API. The goal is to help homeowners identify energy-hungry patterns and reduce their electricity bills.
 
 ## Stack
 - Language: Python 3.11
@@ -13,7 +9,7 @@ energy management dashboards or third-party platforms.
 - ML: scikit-learn (Random Forest / XGBoost)
 - Data: pandas, numpy
 - Model persistence: joblib
-- Dataset: UCI ElectricityLoadDiagrams 2011-2014
+- Dataset: UCI Appliances Energy Prediction (19,735 rows, 28 features, CSV format)
 - Testing: pytest + httpx
 - CI: GitHub Actions
 
@@ -35,7 +31,7 @@ API_PORT=8000
 ```
 diagonally-energy-prediction/
 â”œâ”€â”€ data/
-â”‚   â”œâ”€â”€ raw/                         # original UCI dataset (LD2011_2014.txt)
+â”‚   â”œâ”€â”€ raw/                         # original UCI dataset (KAG_energydata_complete.csv)
 â”‚   â””â”€â”€ processed/                   # engineered features (features.csv)
 â”œâ”€â”€ notebooks/                       # EDA and experimentation
 â”œâ”€â”€ src/

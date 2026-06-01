@@ -2,14 +2,13 @@
 <!-- TODO: Fill after running /write-specs -->
 
 ## ADR-001: Random Forest as baseline model
-Random Forest chosen as the first model for its robustness to outliers,
-no need for feature scaling, and strong performance on tabular time series.
-XGBoost to be evaluated in a later sprint.
+Random Forest chosen for its robustness to multicollinearity across 28 correlated temperature and humidity features, no need for feature scaling, and strong performance on tabular data.
 
 ## ADR-002: joblib for model persistence
-joblib is the standard for scikit-learn model serialization.
-Smaller file size and faster load than pickle for numpy arrays.
+Standard for scikit-learn, fast load time for numpy arrays.
 
-## ADR-003: Features engineered offline, not in API
-Feature engineering runs at training time and produces features.csv.
-The API receives already-engineered features to keep inference fast and simple.
+## ADR-003: rv1 and rv2 dropped at preprocessing
+These are random noise variables included by the dataset authors to test model robustness. They have no predictive value.
+
+## ADR-004: lights feature kept separate from Appliances
+lights energy is a raw sensor reading, not part of the Appliances target, so it is an input feature not a label.
