@@ -11,9 +11,10 @@ from src.services import database
 from src.services.weather import get_weather
 from src.services.features import assemble_simple_features, assemble_full_features
 from src.model.predict import predict_simple, predict_full
-from src.model.forecast import forecast_24h as _forecast_24h
-from src.services.cost import wh_to_cost
+from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
+from src.services.cost import wh_to_cost, project_monthly_bill
 from src.services.database import insert_prediction
+from src.model.forecast import forecast_7d
 
 router = APIRouter(prefix="/api/v1")
 
@@ -130,3 +131,20 @@ async def get_forecast_24h(location: Optional[str] = None):
     lowest_hour = min(items, key=lambda x: x["predicted_wh"])["hour"]
 
     return {"forecast": items, "peak_hour": peak_hour, "lowest_hour": lowest_hour}
+
+
+@router.get("/forecast/7d")
+def get_forecast_7d(location: str = None):
+    if not location:
+        raise HTTPException(status_code=400, detail="location query param is required")
+    try:
+        result = forecast_7d()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    bill = project_monthly_bill(result["forecast"])
+    return {
+        "forecast": result["forecast"],
+        "peak_day": result["peak_day"],
+        "lowest_day": result["lowest_day"],
+        "projected_month_bill": bill,
+    }
