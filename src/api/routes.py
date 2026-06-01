@@ -2,6 +2,7 @@ import json
 import os
 import pathlib
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ from src.services import database
 from src.services.weather import get_weather
 from src.services.features import assemble_simple_features, assemble_full_features
 from src.model.predict import predict_simple, predict_full
+from src.model.forecast import forecast_24h as _forecast_24h
 from src.services.cost import wh_to_cost
 from src.services.database import insert_prediction
 
@@ -101,3 +103,30 @@ def get_leaderboard():
             detail="Leaderboard not available — run training scripts first",
         )
     return json.loads(leaderboard_path.read_text())
+
+
+@router.get("/forecast/24h")
+async def get_forecast_24h(location: Optional[str] = None):
+    if not location:
+        raise HTTPException(status_code=400, detail="location is required")
+    try:
+        raw = _forecast_24h(location)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    items = [
+        {
+            "hour": entry["ds"],
+            "predicted_wh": entry["yhat"],
+            "predicted_kwh": entry["predicted_kwh"],
+            "lower_wh": entry["yhat_lower"],
+            "upper_wh": entry["yhat_upper"],
+            "estimated_cost_ngn": entry["estimated_cost_ngn"],
+        }
+        for entry in raw
+    ]
+
+    peak_hour = max(items, key=lambda x: x["predicted_wh"])["hour"]
+    lowest_hour = min(items, key=lambda x: x["predicted_wh"])["hour"]
+
+    return {"forecast": items, "peak_hour": peak_hour, "lowest_hour": lowest_hour}
