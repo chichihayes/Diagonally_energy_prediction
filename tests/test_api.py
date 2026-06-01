@@ -196,3 +196,82 @@ def test_get_predictions_since_default_none(client, mock_get_predictions):
 def test_get_predictions_invalid_since_returns_422(client):
     response = client.get("/api/v1/predictions?since=not-a-date")
     assert response.status_code == 422
+
+
+# ── POST /api/v1/predict/full ─────────────────────────────────────────────────
+
+_VALID_FULL_BODY = {
+    "lights": 0,
+    "T1": 19.89, "RH_1": 47.6,
+    "T2": 19.2,  "RH_2": 44.79,
+    "T3": 19.79, "RH_3": 44.73,
+    "T4": 17.17, "RH_4": 41.67,
+    "T5": 17.2,  "RH_5": 55.2,
+    "T6": 7.03,  "RH_6": 84.26,
+    "T7": 17.2,  "RH_7": 41.63,
+    "T8": 18.2,  "RH_8": 48.9,
+    "T9": 17.03, "RH_9": 45.53,
+    "location": "Lagos",
+}
+
+_MOCK_WEATHER_FULL = {
+    "T_out": 6.6, "Press_mm_hg": 733.5, "RH_out": 92.0,
+    "Windspeed": 7.0, "Visibility": 63.0, "Tdewpoint": 5.3,
+}
+
+
+@pytest.fixture
+def mock_predict_full_deps(monkeypatch):
+    monkeypatch.setattr("src.api.routes.get_weather", lambda city: _MOCK_WEATHER_FULL)
+    monkeypatch.setattr("src.api.routes.predict_full", lambda features: 84.3)
+    monkeypatch.setattr("src.api.routes.insert_prediction", lambda row: None)
+    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
+
+
+def test_predict_full_valid_body_returns_200_with_all_fields(client, mock_predict_full_deps):
+    response = client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data.keys()) == {"predicted_wh", "predicted_kwh", "estimated_cost_ngn"}
+    assert data["predicted_wh"] == pytest.approx(84.3)
+
+
+def test_predict_full_predicted_kwh_equals_wh_over_1000(client, mock_predict_full_deps):
+    response = client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
+    data = response.json()
+    assert data["predicted_kwh"] == pytest.approx(data["predicted_wh"] / 1000, rel=1e-5)
+
+
+def test_predict_full_estimated_cost_ngn_matches_tariff(client, mock_predict_full_deps):
+    response = client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
+    data = response.json()
+    assert data["estimated_cost_ngn"] == round(data["predicted_kwh"] * 68.00, 2)
+
+
+def test_predict_full_missing_sensor_field_returns_422(client):
+    body = {k: v for k, v in _VALID_FULL_BODY.items() if k != "T3"}
+    response = client.post("/api/v1/predict/full", json=body)
+    assert response.status_code == 422
+
+
+def test_predict_full_weather_failure_returns_500(client, monkeypatch):
+    monkeypatch.setattr(
+        "src.api.routes.get_weather",
+        lambda city: (_ for _ in ()).throw(HTTPException(status_code=500, detail="weather unavailable")),
+    )
+    response = client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
+    assert response.status_code == 500
+
+
+def test_predict_full_calls_insert_prediction_once_with_tier_full(client, monkeypatch):
+    mock_insert = MagicMock()
+    monkeypatch.setattr("src.api.routes.get_weather", lambda city: _MOCK_WEATHER_FULL)
+    monkeypatch.setattr("src.api.routes.predict_full", lambda features: 84.3)
+    monkeypatch.setattr("src.api.routes.insert_prediction", mock_insert)
+    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
+    client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
+    mock_insert.assert_called_once()
+    row = mock_insert.call_args[0][0]
+    assert row["tier"] == "full"
+    assert row["location"] == "Lagos"
+    assert row["predicted_wh"] == pytest.approx(84.3)
