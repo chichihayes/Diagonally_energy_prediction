@@ -332,13 +332,110 @@ function setForecastLoading(on) {
   spinner.classList.toggle('hidden', !on);
 }
 
+async function fetchForecast24h(location) {
+  const res = await fetch(`/api/v1/forecast/24h?location=${encodeURIComponent(location)}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Server error ${res.status}`);
+  }
+  return res.json();
+}
+
+let chart24h = null;
+
+function render24hChart(data, canvasId) {
+  const labels = data.forecast.map(p => {
+    const d = new Date(p.hour);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  });
+
+  const peakIso = data.peak_hour;
+  const pointColors = data.forecast.map(p =>
+    p.hour === peakIso ? '#f59e0b' : '#6366f1'
+  );
+  const pointRadii = data.forecast.map(p =>
+    p.hour === peakIso ? 6 : 3
+  );
+
+  const mainDataset = {
+    label: 'Predicted Wh',
+    data: data.forecast.map(p => p.predicted_wh),
+    borderColor: '#6366f1',
+    pointBackgroundColor: pointColors,
+    pointRadius: pointRadii,
+    tension: 0.3,
+    fill: false,
+  };
+
+  const upperDataset = {
+    label: 'Upper bound',
+    data: data.forecast.map(p => p.upper_wh),
+    borderColor: 'transparent',
+    pointRadius: 0,
+    fill: '+1',
+    backgroundColor: 'rgba(99,102,241,0.12)',
+  };
+
+  const lowerDataset = {
+    label: 'Lower bound',
+    data: data.forecast.map(p => p.lower_wh),
+    borderColor: 'transparent',
+    pointRadius: 0,
+    fill: false,
+  };
+
+  const costs = data.forecast.map(p => p.estimated_cost_ngn);
+
+  if (chart24h) chart24h.destroy();
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  chart24h = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [upperDataset, lowerDataset, mainDataset] },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterLabel: (item) => {
+              if (item.datasetIndex === 2) {
+                return `Cost: ₦${costs[item.dataIndex].toFixed(2)}`;
+              }
+              return null;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { title: { display: true, text: 'Hour' } },
+        y: { title: { display: true, text: 'Wh' } },
+      },
+    },
+  });
+}
+
 if (document.getElementById('forecast-form')) {
-  document.getElementById('forecast-form').addEventListener('submit', (e) => {
+  document.getElementById('forecast-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const location = document.getElementById('location').value.trim();
     if (!location) return;
+
+    const errorEl = document.getElementById('forecast-error');
+    errorEl.classList.add('hidden');
+    errorEl.textContent = '';
+
     setForecastLoading(true);
-    // Issues 009 and 010 complete this handler
+    try {
+      const data24h = await fetchForecast24h(location);
+      render24hChart(data24h, 'chart-24h');
+      document.getElementById('section-24h').classList.remove('hidden');
+      // Issue 010 appends 7d fetch here
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.remove('hidden');
+    } finally {
+      setForecastLoading(false);
+    }
   });
 }
 
