@@ -215,7 +215,7 @@ def _train_tft(train_h: pd.DataFrame, test_h: pd.DataFrame):
 # Entry point
 # ---------------------------------------------------------------------------
 
-def train_and_save(output_path: str = "src/model/trained/model_forecast.joblib") -> None:
+def train_and_save(output_path: str = "src/model/trained/model_forecast.joblib") -> dict:
     train_df, test_df = load_and_split()
     train_h, test_h = _load_hourly_series()
 
@@ -236,3 +236,4 @@ def train_and_save(output_path: str = "src/model/trained/model_forecast.joblib")
     best_name, best_model, best_mape = select_best_by_mape(candidates)
     print(f"Best model: {best_name}  MAPE={best_mape:.2f}%")
     joblib.dump({"model": best_model, "model_type": best_name}, output_path)
+    return {name: mape for name, _, mape in candidates}

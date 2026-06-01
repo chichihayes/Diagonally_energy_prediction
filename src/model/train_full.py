@@ -34,3 +34,4 @@ def train_and_save(output_path: str = "src/model/trained/model_full.joblib") -> 
     winner_name, winner_model, winner_score = select_best_by_r2(candidates)
     print(f"Best model: {winner_name}  R²={winner_score:.4f}")
     joblib.dump(winner_model, output_path)
+    return {name: score for name, _, score in candidates}
