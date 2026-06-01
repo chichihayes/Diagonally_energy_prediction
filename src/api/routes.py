@@ -1,6 +1,9 @@
+import json
+import os
+import pathlib
 from datetime import datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.services import database
@@ -86,3 +89,15 @@ def get_predictions_route(
 ):
     since_str = since.isoformat() if since is not None else None
     return database.get_predictions(tier=tier, limit=limit, since=since_str)
+
+
+@router.get("/models/leaderboard")
+def get_leaderboard():
+    model_path = os.environ.get("MODEL_PATH_FULL", "src/model/trained/model_full.joblib")
+    leaderboard_path = pathlib.Path(model_path).parent / "leaderboard.json"
+    if not leaderboard_path.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Leaderboard not available — run training scripts first",
+        )
+    return json.loads(leaderboard_path.read_text())
