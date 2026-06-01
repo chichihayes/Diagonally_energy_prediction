@@ -323,6 +323,25 @@ async function fetchHistoryTable() {
   renderHistoryTable(data);
 }
 
+// ── Forecast (forecast.html) ──────────────────────────────────────────────────
+
+function setForecastLoading(on) {
+  const btn = document.getElementById('forecast-btn');
+  const spinner = document.getElementById('forecast-spinner');
+  btn.disabled = on;
+  spinner.classList.toggle('hidden', !on);
+}
+
+if (document.getElementById('forecast-form')) {
+  document.getElementById('forecast-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const location = document.getElementById('location').value.trim();
+    if (!location) return;
+    setForecastLoading(true);
+    // Issues 009 and 010 complete this handler
+  });
+}
+
 if (document.getElementById('hero-card')) {
   document.addEventListener('DOMContentLoaded', async () => {
     await loadDashboard();
