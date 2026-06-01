@@ -81,3 +81,22 @@ def test_get_predictions_default_limit_is_10(mock_supabase):
     get_predictions()
 
     mock_supabase.limit.assert_called_once_with(10)
+
+
+def test_insert_prediction_calls_supabase_insert():
+    from unittest.mock import MagicMock, patch
+    from src.services.database import insert_prediction
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
+    with patch("src.services.database.supabase", mock_client):
+        insert_prediction({
+            "tier": "simple",
+            "predicted_wh": 60.5,
+            "predicted_kwh": 0.0605,
+            "estimated_cost_ngn": 4.11,
+            "location": "Lagos",
+            "input_features": {"lights": 0, "T1": 19.89},
+        })
+    mock_client.table.assert_called_once_with("predictions")
+    mock_client.table.return_value.insert.assert_called_once()

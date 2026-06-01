@@ -1,6 +1,34 @@
 import pytest
 
 
+def test_predict_simple_returns_float(tmp_path, monkeypatch):
+    import joblib
+    import pandas as pd
+    from sklearn.dummy import DummyRegressor
+
+    dummy = DummyRegressor(strategy="constant", constant=60.5)
+    X = pd.DataFrame([{
+        "lights": 0, "T1": 20.0, "T_out": 28.0,
+        "RH_out": 80.0, "Windspeed": 3.0, "Visibility": 10.0, "Tdewpoint": 25.0,
+    }])
+    dummy.fit(X, [60.5])
+    model_path = tmp_path / "model_simple.joblib"
+    joblib.dump(dummy, str(model_path))
+    monkeypatch.setenv("MODEL_PATH_SIMPLE", str(model_path))
+
+    import importlib
+    from src.model import predict as predict_module
+    importlib.reload(predict_module)
+
+    features = {
+        "lights": 0, "T1": 20.0, "T_out": 28.0,
+        "RH_out": 80.0, "Windspeed": 3.0, "Visibility": 10.0, "Tdewpoint": 25.0,
+    }
+    result = predict_module.predict_simple(features)
+    assert isinstance(result, float)
+    assert result == pytest.approx(60.5)
+
+
 def test_data_loader_returns_train_test_split():
     from src.services.data_loader import load_and_split
     train, test = load_and_split()
