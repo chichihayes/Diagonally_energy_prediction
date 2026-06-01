@@ -22,14 +22,14 @@ def test_get_predictions_tier_filter(client, mock_get_predictions):
     ]
     response = client.get("/api/v1/predictions?tier=simple")
     assert response.status_code == 200
-    mock_get_predictions.assert_called_once_with(tier="simple", limit=20)
+    mock_get_predictions.assert_called_once_with(tier="simple", limit=20, since=None)
 
 
 def test_get_predictions_limit_param(client, mock_get_predictions):
     mock_get_predictions.return_value = []
     response = client.get("/api/v1/predictions?limit=5")
     assert response.status_code == 200
-    mock_get_predictions.assert_called_once_with(tier=None, limit=5)
+    mock_get_predictions.assert_called_once_with(tier=None, limit=5, since=None)
 
 
 def test_get_predictions_limit_max_50(client, mock_get_predictions):
@@ -175,3 +175,24 @@ def test_get_predictions_full_tier_includes_input_features(client, seed_full_pre
     assert "T1" in record["input_features"]
     assert "RH_1" in record["input_features"]
     assert "T_out" in record["input_features"]
+
+
+def test_get_predictions_since_forwarded(client, mock_get_predictions):
+    mock_get_predictions.return_value = []
+    response = client.get("/api/v1/predictions?since=2026-05-31T10%3A00%3A00Z")
+    assert response.status_code == 200
+    mock_get_predictions.assert_called_once_with(
+        tier=None, limit=20, since="2026-05-31T10:00:00+00:00"
+    )
+
+
+def test_get_predictions_since_default_none(client, mock_get_predictions):
+    mock_get_predictions.return_value = []
+    response = client.get("/api/v1/predictions")
+    assert response.status_code == 200
+    mock_get_predictions.assert_called_once_with(tier=None, limit=20, since=None)
+
+
+def test_get_predictions_invalid_since_returns_422(client):
+    response = client.get("/api/v1/predictions?since=not-a-date")
+    assert response.status_code == 422

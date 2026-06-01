@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
@@ -43,5 +45,7 @@ def predict_simple_endpoint(body: SimplePredictRequest):
 def get_predictions_route(
     tier: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
+    since: datetime | None = Query(default=None),
 ):
-    return database.get_predictions(tier=tier, limit=limit)
+    since_str = since.isoformat() if since is not None else None
+    return database.get_predictions(tier=tier, limit=limit, since=since_str)

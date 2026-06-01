@@ -10,6 +10,7 @@ def db_chain():
     chain.order.return_value = chain
     chain.limit.return_value = chain
     chain.eq.return_value = chain
+    chain.gte.return_value = chain
     chain.execute.return_value = MagicMock(data=[])
     return chain
 
@@ -100,3 +101,17 @@ def test_insert_prediction_calls_supabase_insert():
         })
     mock_client.table.assert_called_once_with("predictions")
     mock_client.table.return_value.insert.assert_called_once()
+
+
+def test_get_predictions_since_applies_gte(mock_supabase):
+    from src.services.database import get_predictions
+
+    get_predictions(since="2026-05-31T10:00:00Z")
+    mock_supabase.gte.assert_called_once_with("created_at", "2026-05-31T10:00:00Z")
+
+
+def test_get_predictions_no_gte_when_since_is_none(mock_supabase):
+    from src.services.database import get_predictions
+
+    get_predictions(since=None)
+    mock_supabase.gte.assert_not_called()
