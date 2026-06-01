@@ -97,3 +97,22 @@ def test_assemble_full_features_preserves_all_sensor_values():
     assert result["RH_7"] == 70.0
     assert result["Windspeed"] == 4.0
     assert result["lights"] == 50
+
+
+def test_build_lag_matrix_returns_correct_columns():
+    from src.services.data_loader import load_and_split
+    from src.services.features import build_lag_matrix
+    train, _ = load_and_split()
+    X, y = build_lag_matrix(train)
+    expected = ["lag_1h", "lag_24h", "lag_168h", "rolling_mean_3h", "rolling_mean_24h"]
+    assert list(X.columns) == expected
+    assert y.name == "Appliances"
+
+
+def test_build_lag_matrix_has_no_nulls_after_dropna():
+    from src.services.data_loader import load_and_split
+    from src.services.features import build_lag_matrix
+    train, _ = load_and_split()
+    X, y = build_lag_matrix(train)
+    assert X.isna().sum().sum() == 0
+    assert y.isna().sum() == 0
