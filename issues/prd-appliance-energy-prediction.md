@@ -71,7 +71,7 @@ Both tiers convert predicted Wh to kWh and calculate an estimated cost in Nigeri
 |---|---|
 | AC-01 | `POST /api/v1/predict/full` accepts all 26 features and returns `predicted_wh`, `predicted_kwh`, and `estimated_cost_ngn` within 2 seconds. |
 | AC-02 | `POST /api/v1/predict/simple` accepts `lights`, `T1`, and `location` and returns the same three fields within 2 seconds. |
-| AC-03 | The best of Random Forest and XGBoost achieves ≥ 85% accuracy (R²) on the held-out test split of the UCI dataset. |
+| AC-03 | All six regression models (Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression) trained and evaluated — best R² on held-out test split saved as final model achieving at least 85% R². |
 | AC-04 | OpenWeatherMap responses are cached for 10 minutes — no duplicate API calls within the cache window. |
 | AC-05 | APScheduler submits Smart Home readings to `/api/v1/predict/full` every 15 minutes without manual intervention. |
 | AC-06 | Every prediction and cost estimate is stored in Supabase immediately after the API responds. |
@@ -80,6 +80,13 @@ Both tiers convert predicted Wh to kWh and calculate an estimated cost in Nigeri
 | AC-09 | Basic tier frontend displays: predicted Wh, predicted kWh, estimated NGN cost, top contributing weather factors, and prediction history. |
 | AC-10 | All tests pass in CI on every push to main. |
 | AC-11 | `GET /health` returns `{ "status": "ok" }` at all times. |
+| AC-12 | All six regression models trained, evaluated and compared — best R² saved as final model. |
+| AC-13 | All five time series models trained, evaluated and compared — best MAPE saved as final model. |
+| AC-14 | GET /api/v1/models/leaderboard returns full comparison table of all models with scores and winner. |
+| AC-15 | GET /api/v1/forecast/24h returns hourly forecast with confidence intervals and estimated NGN cost per hour. |
+| AC-16 | GET /api/v1/forecast/7d returns daily forecast with peak day, lowest day and projected monthly bill range. |
+| AC-17 | forecast.html displays 7-day forecast chart, highlights peak days and shows optimistic and pessimistic monthly bill. |
+| AC-18 | Monthly bill projection returns optimistic, pessimistic and most likely NGN values. |
 
 ---
 
@@ -88,32 +95,47 @@ Both tiers convert predicted Wh to kWh and calculate an estimated cost in Nigeri
 ```
 src/
 ├── api/
-│   ├── main.py                  # FastAPI app, APScheduler startup
-│   └── routes.py                # POST /predict/full, POST /predict/simple, GET /health
+│   ├── main.py                       # FastAPI app + APScheduler startup
+│   └── routes.py                     # all prediction and forecast endpoints
 ├── model/
-│   ├── train.py                 # train RF and XGBoost, evaluate, save best model
-│   ├── predict.py               # load model singleton, run inference
+│   ├── train_full.py                 # train all 6 regression models on 25 features — save best R²
+│   ├── train_simple.py               # train all 6 regression models on 7 features — save best R²
+│   ├── train_forecast.py             # train all 5 time series models — save best MAPE
+│   ├── evaluate.py                   # compare all models, print leaderboard, return best
+│   ├── predict.py                    # load regression model singletons and run inference
+│   ├── forecast.py                   # load forecast model singleton and return predictions
 │   └── trained/
-│       ├── model_full.joblib    # 26-feature model (Smart Home)
-│       └── model_simple.joblib  # 7-feature model (Basic)
+│       ├── model_full.joblib         # best regression model on 25 features
+│       ├── model_simple.joblib       # best regression model on 7 features
+│       └── model_forecast.joblib     # best time series model
 └── services/
-    ├── features.py              # assemble feature dicts for both tiers
-    ├── data_loader.py           # load and preprocess KAG_energydata_complete.csv
-    ├── weather.py               # OpenWeatherMap client with 10-min cache
-    └── database.py              # Supabase insert for predictions table
+    ├── features.py                   # assemble feature dicts for both tiers + lag features
+    ├── data_loader.py                # load and preprocess KAG_energydata_complete.csv
+    ├── weather.py                    # OpenWeatherMap client with 10-min cache
+    ├── cost.py                       # Wh to NGN conversion + monthly bill projection
+    ├── database.py                   # Supabase insert and retrieve predictions and forecasts
+    └── scheduler.py                  # APScheduler — auto-submit readings every 15 minutes
 
 frontend/
-├── index.html                   # Basic tier form and results display
-└── dashboard.html               # Smart Home tier live dashboard
+├── index.html                        # landing page with tier selection
+├── simple.html                       # Basic tier form and results
+├── dashboard.html                    # Smart Home tier live dashboard
+└── forecast.html                     # 7-day forecast and monthly bill projection
 
 scripts/
-└── run_training.py              # offline training entrypoint
+├── run_training_full.py              # train all regression models, save best for full tier
+├── run_training_simple.py            # train all regression models, save best for simple tier
+└── run_training_forecast.py          # train all time series models, save best forecast model
 
 tests/
-├── test_api.py                  # endpoint tests (httpx)
-├── test_features.py             # feature assembly tests
-├── test_model.py                # model inference tests
-└── test_weather.py              # weather client and cache tests
+├── test_api.py                       # endpoint tests for all routes
+├── test_features.py                  # feature assembly and lag feature tests
+├── test_model.py                     # regression model inference tests
+├── test_forecast.py                  # time series forecast tests
+├── test_evaluate.py                  # model comparison and leaderboard tests
+├── test_weather.py                   # weather client and cache tests
+├── test_cost.py                      # cost calculation and bill projection tests
+└── test_database.py                  # Supabase storage tests
 ```
 
 ---
@@ -122,14 +144,16 @@ tests/
 
 | Decision | Choice | Reason |
 |---|---|---|
-| ML models | Random Forest (baseline) + XGBoost (challenger) | Both trained and evaluated; best R² on test split is saved. RF handles multicollinearity across 28 correlated T/RH features without scaling. XGBoost typically outperforms on tabular data. |
-| Two model files | `model_full.joblib` (26 features), `model_simple.joblib` (7 features) | Basic tier users have no sensors — a simpler model trained on a minimal feature set gives meaningful predictions without requiring all 26 inputs. |
-| Dataset | UCI Appliances Energy Prediction (KAG_energydata_complete.csv) | 19,735 rows, 28 features, real Zigbee sensor data from a Belgian house, 10-minute intervals, no missing values, CSV format. |
-| rv1 / rv2 dropped | Dropped at preprocessing | Random noise variables added by dataset authors to test model robustness. No predictive value. |
-| lights kept as input | Input feature, not label | Raw sensor reading separate from the Appliances target. |
-| Weather | OpenWeatherMap free tier | Supplies T_out, RH_out, Windspeed, Visibility, Tdewpoint, Press_mm_hg automatically. Responses cached 10 minutes to keep predictions under 2 seconds. |
-| Database | Supabase (Postgres) | Stores all predictions and sensor readings after every API call. Managed Postgres with a simple REST client. |
-| Scheduler | APScheduler | Runs inside the FastAPI process on startup; submits Smart Home readings every 15 minutes. |
-| Cost calculation | NERC tariff from env var | Rate can change without a redeploy. Applied to predicted kWh. |
-| Frontend | HTML + JS + Tailwind CDN | No build step, mobile responsive, zero framework overhead for a demo. |
-| Model persistence | joblib | Standard for scikit-learn, fast load of numpy arrays. Loaded once at startup as a singleton — never reloaded per request. |
+| Regression models | Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression — best R² wins | Comprehensive evaluation ensures objectively best model selected for tabular regression |
+| Time series models | Prophet, XGBoost with lags, LightGBM with lags, LSTM, TFT — best MAPE wins | Covers classical, boosting and deep learning approaches — TFT is state of the art |
+| Two regression model files | model_full.joblib (25 features), model_simple.joblib (7 features) | Basic tier users have no sensors — simpler model gives meaningful predictions |
+| Dataset | UCI Appliances Energy Prediction (KAG_energydata_complete.csv) | 19,735 rows, 28 features, real Zigbee sensor data, 10-minute intervals, no missing values |
+| rv1 and rv2 dropped | Dropped at preprocessing | Random noise variables — no predictive value confirmed by feature importance |
+| Weather | OpenWeatherMap free tier | Supplies 6 outside features automatically, cached 10 minutes |
+| Database | Supabase (Postgres) | Stores all predictions and forecasts after every API call |
+| Scheduler | APScheduler inside FastAPI | Simple deployment for demo — submits Smart Home readings every 15 minutes |
+| Cost calculation | NERC tariff from env var | Rate can change without redeploy |
+| Bill projection | Optimistic, most likely, pessimistic range | Realistic picture using confidence intervals from forecast model |
+| Frontend | HTML + JS + Tailwind CDN | No build step, mobile responsive, zero framework overhead |
+| Model persistence | joblib | Standard for scikit-learn, fast load, singleton pattern at startup |
+| Deep learning | neuralforecast + PyTorch | Unified API for LSTM and TFT — reduces boilerplate |

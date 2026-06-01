@@ -2,7 +2,7 @@
 
 ## POST /api/v1/predict/full
 
-Smart Home tier. Accepts all 25 sensor + weather features. Weather is fetched
+Smart Home tier. Accepts all 25 input features. Weather is fetched
 automatically from OpenWeatherMap — do not pass T_out, RH_out, etc. directly;
 the API enriches the payload internally.
 
@@ -113,6 +113,78 @@ Returns stored prediction history from Supabase ordered by most recent first.
   }
 ]
 ```
+
+---
+
+## GET /api/v1/forecast/24h
+Returns hourly consumption forecast for next 24 hours.
+Query params: location (string)
+Response:
+{
+  forecast: [
+    {
+      hour: 2024-01-15 14:00,
+      predicted_wh: 280.5,
+      predicted_kwh: 0.28,
+      lower_wh: 210.0,
+      upper_wh: 350.0,
+      estimated_cost_ngn: 19.04
+    }
+  ],
+  peak_hour: 2024-01-15 20:00,
+  lowest_hour: 2024-01-15 04:00
+}
+
+---
+
+## GET /api/v1/forecast/7d
+Returns daily consumption forecast for next 7 days.
+Query params: location (string)
+Response:
+{
+  forecast: [
+    {
+      date: 2024-01-15,
+      predicted_wh: 6720.0,
+      predicted_kwh: 6.72,
+      lower_wh: 5040.0,
+      upper_wh: 8400.0,
+      estimated_cost_ngn: 456.96
+    }
+  ],
+  peak_day: Tuesday,
+  lowest_day: Wednesday,
+  projected_month_bill: {
+    optimistic_ngn: 3200.00,
+    pessimistic_ngn: 5100.00,
+    most_likely_ngn: 4200.00
+  }
+}
+
+---
+
+## GET /api/v1/models/leaderboard
+Returns comparison of all trained models and which was selected.
+Response:
+{
+  regression_full: [
+    { model: RandomForest, r2: 0.87 },
+    { model: XGBoost, r2: 0.91 },
+    { model: LightGBM, r2: 0.90 },
+    { model: CatBoost, r2: 0.89 },
+    { model: ExtraTrees, r2: 0.86 },
+    { model: Ridge, r2: 0.71 },
+    { winner: XGBoost }
+  ],
+  forecast: [
+    { model: Prophet, mape: 12.3 },
+    { model: XGBoost_lags, mape: 10.1 },
+    { model: LightGBM_lags, mape: 9.8 },
+    { model: LSTM, mape: 8.9 },
+    { model: TFT, mape: 7.2 },
+    { winner: TFT }
+  ]
+}
 
 ---
 

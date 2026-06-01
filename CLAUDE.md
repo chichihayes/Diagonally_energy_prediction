@@ -8,7 +8,7 @@ Tier A — Smart Home: Zigbee sensors installed in each room automatically colle
 room temperatures (T1-T9) and humidity readings (RH_1-RH_9). Outside weather 
 features (T_out, RH_out, Windspeed, Visibility, Tdewpoint, Press_mm_hg) are 
 auto-fetched from OpenWeatherMap API. The homeowner only inputs lights usage. 
-All 26 features are submitted to POST /api/v1/predict/full and the model returns 
+All 25 features are submitted to POST /api/v1/predict/full and the model returns 
 the predicted appliance energy consumption in watt-hours. This is the most accurate tier.
 
 Tier B — Basic: No sensors needed. The homeowner inputs only lights usage and 
@@ -75,9 +75,10 @@ diagonally-energy-prediction/
 │   └── processed/                        # cleaned and engineered features + lag features
 ├── notebooks/                            # EDA, model comparison, feature importance
 ├── frontend/
-│   ├── index.html                        # Basic tier form and current prediction
+│   ├── index.html                        # landing page with tier selection
+│   ├── simple.html                       # Basic tier form and results
 │   ├── dashboard.html                    # Smart Home tier live dashboard
-│   ├── forecast.html                     # 24hr and 7-day forecast + monthly bill projection
+│   ├── forecast.html                     # 7-day forecast and monthly bill projection
 │   └── assets/
 │       ├── style.css                     # custom styles
 │       └── app.js                        # API calls and UI logic
@@ -86,14 +87,14 @@ diagonally-energy-prediction/
 │   │   ├── main.py                       # FastAPI app entry point + APScheduler startup
 │   │   └── routes.py                     # all prediction and forecast endpoints
 │   ├── model/
-│   │   ├── train_full.py                 # train all 6 regression models on 26 features — save best R²
+│   │   ├── train_full.py                 # train all 6 regression models on 25 features — save best R²
 │   │   ├── train_simple.py               # train all 6 regression models on 7 features — save best R²
 │   │   ├── train_forecast.py             # train all 5 time series models — save best MAPE
 │   │   ├── evaluate.py                   # compare all models, print leaderboard, return best
 │   │   ├── predict.py                    # load regression model singletons and run inference
 │   │   ├── forecast.py                   # load forecast model singleton and return predictions
 │   │   └── trained/
-│   │       ├── model_full.joblib         # best regression model on 26 features
+│   │       ├── model_full.joblib         # best regression model on 25 features
 │   │       ├── model_simple.joblib       # best regression model on 7 features
 │   │       └── model_forecast.joblib     # best time series model
 │   └── services/
@@ -124,7 +125,7 @@ diagonally-energy-prediction/
 
 Layer 1 — Current Consumption (Regression):
 - Six models trained and evaluated: Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression
-- All six trained on same feature sets — full (26 features) and simple (7 features)
+- All six trained on same feature sets — full (25 features) and simple (7 features)
 - Evaluation metric: R² score on held-out test split (80/20 split, no shuffle — time ordered)
 - Best R² model saved as model_full.joblib and model_simple.joblib respectively
 - Full model features: lights, T1, RH_1, T2, RH_2, T3, RH_3, T4, RH_4, T5, RH_5, T6, RH_6, T7, RH_7, T8, RH_8, T9, RH_9, T_out, Press_mm_hg, RH_out, Windspeed, Visibility, Tdewpoint
@@ -143,6 +144,9 @@ Layer 2 — Future Consumption (Time Series):
 - LSTM and TFT implemented using PyTorch via neuralforecast library
 - Forecast horizons: 24 hours ahead (hourly) and 7 days ahead (daily)
 - All forecast models return: yhat, yhat_lower, yhat_upper (confidence interval)
+- Prophet input: dataframe with ds (datetime) and y (Appliances Wh) columns
+- Never expose raw model output to the API — always format into clean JSON
+- forecast.py loads best model once at startup as a singleton
 - Retrain by running scripts/run_training_forecast.py — never retrain inside the API
 
 Layer 3 — Bill Estimation (No Model):
@@ -152,17 +156,6 @@ Layer 3 — Bill Estimation (No Model):
 - Days remaining calculated from datetime.now() — never hardcoded
 - Always read tariff from ELECTRICITY_TARIFF_NGN_PER_KWH environment variable
 - Round all NGN values to 2 decimal places
-
-## Time series conventions
-- Five models evaluated: Prophet, XGBoost with lags, LightGBM with lags, LSTM, TFT
-- Best MAPE on test split is saved as model_forecast.joblib
-- Prophet input: dataframe with ds (datetime) and y (Appliances Wh) columns
-- XGBoost and LightGBM time series input: lag features (lag_1h, lag_24h, lag_168h, rolling_mean_3h, rolling_mean_24h)
-- LSTM and TFT implemented via neuralforecast library using PyTorch
-- All forecast outputs include: yhat, yhat_lower, yhat_upper
-- Forecast horizons: 24 hours (hourly, freq=H) and 7 days (daily, freq=D)
-- Never expose raw model output to the API — always format into clean JSON
-- forecast.py loads best model once at startup as a singleton
 
 ## Database conventions
 - Always use supabase-py client — never raw psycopg2
@@ -192,9 +185,10 @@ Layer 3 — Bill Estimation (No Model):
 ## Frontend conventions
 - Pure HTML + JavaScript — no React, no Vue, no build step
 - Tailwind CSS via CDN for styling
-- index.html — landing page showing latest prediction and consumption history
+- index.html — landing page with tier selection
 - simple.html — Basic tier form: lights input + T1 input + location input
-- full.html — Smart Home tier: shows live auto-updating predictions every 15 minutes
+- dashboard.html — Smart Home tier: shows live auto-updating predictions every 15 minutes
+- forecast.html — 7-day forecast and monthly bill projection
 - app.js makes fetch() calls to the FastAPI API — no direct Supabase calls from frontend
 - All API responses display: predicted Wh, predicted kWh, estimated cost in NGN
 - Frontend must be responsive — works on mobile and desktop
