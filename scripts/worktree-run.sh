@@ -180,7 +180,7 @@ for ISSUE in "${PHASE_ISSUES[@]}"; do
     (
         cd "$WT_PATH"
         echo "[$(date +%T)] ▶  $ISSUE — starting"
-        claude --print "$(cat "$ISSUE_FILE")" 2>&1 | tee ".claude-log.txt"
+        claude --dangerously-skip-permissions --print -- "$(cat "$ISSUE_FILE")" 2>&1 | tee ".claude-log.txt"
         EXIT_CODE="${PIPESTATUS[0]}"
         echo "[$(date +%T)] $([ "$EXIT_CODE" -eq 0 ] && echo '✓' || echo '✗')  $ISSUE — exit $EXIT_CODE"
         exit "$EXIT_CODE"
