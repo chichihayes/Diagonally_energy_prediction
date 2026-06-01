@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Basic Prediction — Diagonally</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            teal: {
+              600: '#0d9488',
+              700: '#0f766e',
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body class="min-h-screen bg-gray-50 flex flex-col">
+
+  <!-- Nav -->
+  <nav class="bg-white border-b border-gray-200">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
+      <a href="index.html" class="font-semibold text-teal-600 text-lg tracking-tight">Diagonally</a>
+      <a href="simple.html" class="text-sm font-medium text-gray-900 border-b-2 border-teal-600 pb-0.5">Basic</a>
+      <a href="dashboard.html" class="text-sm text-gray-500 hover:text-gray-900">Smart Home</a>
+      <a href="forecast.html" class="text-sm text-gray-500 hover:text-gray-900">Forecast</a>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main class="flex-1 flex items-start justify-center px-4 py-10">
+    <div class="w-full max-w-lg">
+
+      <!-- Header -->
+      <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Predict Your Appliance Usage</h1>
+        <p class="mt-1 text-sm text-gray-500">
+          Enter your lights usage, room temperature, and city. We'll fetch current weather automatically.
+        </p>
+      </div>
+
+      <!-- Form card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <form id="prediction-form" novalidate>
+
+          <!-- Lights -->
+          <div class="mb-5">
+            <label for="lights" class="block text-sm font-medium text-gray-700 mb-1">
+              Lights <span class="text-gray-400 font-normal">(Wh)</span>
+            </label>
+            <input
+              id="lights"
+              name="lights"
+              type="number"
+              min="0"
+              step="any"
+              placeholder="e.g. 100"
+              class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition"
+              required
+            />
+            <p id="lights-error" class="field-error" hidden></p>
+          </div>
+
+          <!-- T1 -->
+          <div class="mb-5">
+            <label for="t1" class="block text-sm font-medium text-gray-700 mb-1">
+              Room Temperature T1 <span class="text-gray-400 font-normal">(°C)</span>
+            </label>
+            <input
+              id="t1"
+              name="t1"
+              type="number"
+              min="-20"
+              max="60"
+              step="any"
+              placeholder="e.g. 22"
+              class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition"
+              required
+            />
+            <p id="t1-error" class="field-error" hidden></p>
+          </div>
+
+          <!-- City -->
+          <div class="mb-6">
+            <label for="city" class="block text-sm font-medium text-gray-700 mb-1">
+              City
+            </label>
+            <input
+              id="city"
+              name="city"
+              type="text"
+              placeholder="e.g. Lagos"
+              class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent transition"
+              required
+            />
+            <p id="city-error" class="field-error" hidden></p>
+          </div>
+
+          <!-- Submit -->
+          <button
+            id="submit-btn"
+            type="submit"
+            class="w-full bg-teal-600 hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg px-4 py-3 transition focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2"
+          >
+            Get Prediction
+          </button>
+
+        </form>
+      </div>
+
+      <!-- Result placeholder — Issue 002 will populate this -->
+      <div id="result-card" hidden class="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6"></div>
+
+    </div>
+  </main>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
