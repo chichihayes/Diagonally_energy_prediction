@@ -87,6 +87,10 @@ Both tiers convert predicted Wh to kWh and calculate an estimated cost in Nigeri
 | AC-16 | GET /api/v1/forecast/7d returns daily forecast with peak day, lowest day and projected monthly bill range. |
 | AC-17 | forecast.html displays 7-day forecast chart, highlights peak days and shows optimistic and pessimistic monthly bill. |
 | AC-18 | Monthly bill projection returns optimistic, pessimistic and most likely NGN values. |
+| AC-19 | Every incoming reading is checked with Z-Score — any feature with Z > 3 is flagged as anomaly and stored in Supabase anomalies table with low_confidence=True on the prediction. |
+| AC-20 | Every 100 clean readings rolling mean deviation is calculated for all 25 features using formula: abs(rolling_mean - training_mean) / training_mean × 100 — any feature > 15% triggers drift flag logged to drift_log table. |
+| AC-21 | Retraining triggers automatically when all 3 conditions met: drift detected, 2000+ clean rows, anomaly rate < 10%. New model only replaces old if R² improves. Outcome logged to retrain_log. |
+| AC-22 | training_stats.json saved at training time containing mean and std of all 25 features — used as fixed reference for Z-Score and drift detection. |
 
 ---
 

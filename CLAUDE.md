@@ -103,7 +103,9 @@ diagonally-energy-prediction/
 │       ├── weather.py                    # OpenWeatherMap client with 10-min cache
 │       ├── cost.py                       # Wh to NGN conversion + monthly bill projection
 │       ├── database.py                   # Supabase insert and retrieve predictions and forecasts
-│       └── scheduler.py                  # APScheduler — auto-submit readings every 15 minutes
+│       ├── scheduler.py                  # APScheduler — auto-submit readings every 15 minutes
+│       ├── monitor.py                    # Z-Score anomaly detection on every incoming reading — flags if any feature Z > 3 std devs from training mean
+│       └── retrain_trigger.py            # checks 3 conditions every 100 readings: drift > 15%, clean rows > 2000, anomaly rate < 10% — triggers retraining when all 3 met
 ├── tests/
 │   ├── test_api.py                       # endpoint tests for all routes
 │   ├── test_features.py                  # feature assembly and lag feature tests
@@ -112,11 +114,14 @@ diagonally-energy-prediction/
 │   ├── test_evaluate.py                  # model comparison and leaderboard tests
 │   ├── test_weather.py                   # weather client and cache tests
 │   ├── test_cost.py                      # cost calculation and bill projection tests
-│   └── test_database.py                  # Supabase storage tests
+│   ├── test_database.py                  # Supabase storage tests
+│   ├── test_monitor.py                   # Z-Score anomaly detection tests
+│   └── test_retrain_trigger.py           # retraining condition tests
 ├── scripts/
 │   ├── run_training_full.py              # train all regression models, save best for full tier
 │   ├── run_training_simple.py            # train all regression models, save best for simple tier
-│   └── run_training_forecast.py          # train all time series models, save best forecast model
+│   ├── run_training_forecast.py          # train all time series models, save best forecast model
+│   └── run_retraining.py                 # manual retraining trigger — pulls clean rows from Supabase + UCI dataset, retrains all 6 models, saves best R²
 └── .github/workflows/
     └── ci.yml                            # run all tests on push to main
 ```
@@ -156,6 +161,42 @@ Layer 3 — Bill Estimation (No Model):
 - Days remaining calculated from datetime.now() — never hardcoded
 - Always read tariff from ELECTRICITY_TARIFF_NGN_PER_KWH environment variable
 - Round all NGN values to 2 decimal places
+
+## Monitoring and retraining conventions
+
+Anomaly Detection — Z-Score (every 15 min reading):
+- Formula: Z = (new_value - training_mean) / training_std
+- Training mean and std calculated once from UCI CSV and saved in src/model/trained/training_stats.json
+- Check all 25 input features on every incoming reading
+- Z > 3 on ANY feature → reading flagged as anomaly
+- Anomalous readings stored in Supabase anomalies table with anomaly=True
+- Prediction still made but marked low_confidence=True
+- Anomalous readings NOT counted toward clean row pool
+- Never use anomalous readings for retraining
+
+Drift Detection — Rolling Mean Deviation (every 100 clean readings):
+- Formula: deviation = |rolling_mean - training_mean| / training_mean × 100
+- training_mean is fixed from UCI CSV — never changes
+- rolling_mean is mean of last 100 clean readings for each feature
+- Check all 25 features
+- Any feature deviation > 15% → drift flagged
+- Drift flagged → log to Supabase drift_log table
+- Drift flagged → start counting toward retraining threshold
+
+Retraining Trigger — 3 conditions must ALL be true:
+- Condition 1: Drift detected (at least one feature deviation > 15%)
+- Condition 2: At least 2000 clean rows accumulated in Supabase since drift was first flagged
+- Condition 3: Anomaly rate < 10% (clean rows / total rows > 90%)
+- When all 3 met: pull all clean rows from Supabase, combine with UCI dataset, retrain all 6 models, evaluate on held-out set, save best R² model
+- If new model R² > old model R² → replace model
+- If new model R² < old model R² → keep old model
+- Log outcome to Supabase retrain_log table either way
+- Reset clean row counter and drift flag after retraining
+
+Supabase tables for monitoring:
+- anomalies: id, timestamp, features (JSONB), z_scores (JSONB), flagged_features, low_confidence_prediction
+- drift_log: id, timestamp, feature, training_mean, rolling_mean, deviation_pct
+- retrain_log: id, timestamp, trigger_reason, old_model_r2, new_model_r2, model_replaced (bool), rows_used
 
 ## Database conventions
 - Always use supabase-py client — never raw psycopg2
