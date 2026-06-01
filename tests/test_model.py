@@ -60,6 +60,32 @@ def test_train_full_produces_loadable_model(tmp_path):
     assert isinstance(float(result[0]), float)
 
 
+def test_predict_full_returns_float(tmp_path, monkeypatch):
+    import joblib
+    import pandas as pd
+    from sklearn.dummy import DummyRegressor
+
+    cols = [
+        "lights", "T1", "RH_1", "T2", "RH_2", "T3", "RH_3", "T4", "RH_4",
+        "T5", "RH_5", "T6", "RH_6", "T7", "RH_7", "T8", "RH_8", "T9", "RH_9",
+        "T_out", "Press_mm_hg", "RH_out", "Windspeed", "Visibility", "Tdewpoint",
+    ]
+    dummy = DummyRegressor(strategy="constant", constant=150.0)
+    X = pd.DataFrame([{c: 1.0 for c in cols}])
+    dummy.fit(X, [150.0])
+    model_path = tmp_path / "model_full.joblib"
+    joblib.dump(dummy, str(model_path))
+    monkeypatch.setenv("MODEL_PATH_FULL", str(model_path))
+
+    from src.model import predict as predict_module
+    import importlib
+    importlib.reload(predict_module)
+
+    result = predict_module.predict_full({c: 1.0 for c in cols})
+    assert isinstance(result, float)
+    assert result == pytest.approx(150.0)
+
+
 def test_train_simple_produces_loadable_model(tmp_path):
     import joblib
     from src.model.train_simple import train_and_save

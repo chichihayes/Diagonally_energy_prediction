@@ -1,0 +1,53 @@
+import logging
+import os
+
+from src.services.weather import get_weather
+from src.services.features import assemble_full_features
+from src.model.predict import predict_full
+from src.services.cost import wh_to_cost
+from src.services.database import insert_prediction
+
+logger = logging.getLogger(__name__)
+
+
+def _read_sensors() -> tuple[int, dict]:
+    lights = int(os.environ.get("SENSOR_LIGHTS", "0"))
+    sensors = {}
+    for i in range(1, 10):
+        sensors[f"T{i}"] = float(os.environ.get(f"SENSOR_T{i}", "20.0"))
+        sensors[f"RH_{i}"] = float(os.environ.get(f"SENSOR_RH_{i}", "50.0"))
+    return lights, sensors
+
+
+def submit_smart_home_reading() -> None:
+    location = os.environ.get("SENSOR_LOCATION", "Lagos")
+    lights, sensors = _read_sensors()
+
+    try:
+        weather = get_weather(location)
+    except Exception:
+        logger.exception("Scheduler: weather fetch failed — skipping tick")
+        return
+
+    features = assemble_full_features(lights, sensors, weather)
+
+    try:
+        predicted_wh = predict_full(features)
+    except Exception:
+        logger.exception("Scheduler: model inference failed — skipping tick")
+        return
+
+    predicted_kwh, estimated_cost_ngn = wh_to_cost(predicted_wh)
+
+    try:
+        insert_prediction({
+            "tier": "full",
+            "predicted_wh": predicted_wh,
+            "predicted_kwh": predicted_kwh,
+            "estimated_cost_ngn": estimated_cost_ngn,
+            "location": location,
+            "input_features": features,
+        })
+    except Exception:
+        logger.exception("Scheduler: Supabase insert failed — skipping tick")
+        return
