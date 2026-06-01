@@ -1,0 +1,14 @@
+﻿.env
+.env.local
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+.worktrees/
+data/raw/
+src/model/trained/
+*.joblib
+*.pkl
+.ipynb_checkpoints/

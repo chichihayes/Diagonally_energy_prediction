@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\programming\\\\Diagonally_energy_prediction\" remote -v)",
+      "PowerShell(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\programming\\\\Diagonally_energy_prediction\" status 2>&1)"
+    ]
+  }
+}
