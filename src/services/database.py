@@ -1,0 +1,21 @@
+import os
+
+from supabase import create_client, Client
+
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL", ""),
+    os.getenv("SUPABASE_ANON_KEY", ""),
+)
+
+
+def get_predictions(tier: str | None = None, limit: int = 10) -> list[dict]:
+    query = (
+        supabase.table("predictions")
+        .select("id, tier, predicted_wh, predicted_kwh, estimated_cost_ngn, location, created_at")
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
+    if tier is not None:
+        query = query.eq("tier", tier)
+    response = query.execute()
+    return response.data
