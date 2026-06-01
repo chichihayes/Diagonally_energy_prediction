@@ -1,4 +1,5 @@
 import os
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi import HTTPException
@@ -58,3 +59,27 @@ def test_get_weather_raises_500_on_network_error():
                 with pytest.raises(HTTPException) as exc:
                     get_weather("Lagos")
     assert exc.value.status_code == 500
+
+
+def test_weather_cache_hit_skips_second_request():
+    """Two get_weather calls within TTL produce exactly one HTTP request."""
+    from src.services.weather import get_weather
+    with patch.dict(os.environ, _ENV), \
+         patch("src.services.weather._cache", {}), \
+         patch("requests.get", return_value=_make_mock()) as mock_get:
+        get_weather("Lagos")
+        get_weather("Lagos")
+    assert mock_get.call_count == 1
+
+
+def test_weather_cache_miss_after_ttl_makes_new_request(monkeypatch):
+    """A call after TTL expiry bypasses the cache and makes a fresh HTTP request."""
+    monkeypatch.setattr("src.services.weather._CACHE_TTL", 0)
+    from src.services.weather import get_weather
+    with patch.dict(os.environ, _ENV), \
+         patch("src.services.weather._cache", {}), \
+         patch("requests.get", return_value=_make_mock()) as mock_get:
+        get_weather("Lagos")
+        time.sleep(0.01)
+        get_weather("Lagos")
+    assert mock_get.call_count == 2

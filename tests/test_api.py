@@ -1,5 +1,11 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from fastapi import HTTPException
+
+MOCK_WEATHER = {
+    "T_out": 28.4, "RH_out": 82.0,
+    "Windspeed": 3.1, "Visibility": 10.0, "Tdewpoint": 25.1,
+}
 
 
 def test_get_predictions_returns_200(client, mock_get_predictions):
@@ -90,10 +96,36 @@ def test_predict_simple_missing_field_returns_422(client):
 
 
 def test_predict_simple_weather_error_propagates(client, monkeypatch):
-    from fastapi import HTTPException
     monkeypatch.setattr("src.api.routes.get_weather", lambda city: (_ for _ in ()).throw(HTTPException(status_code=500, detail="Weather fetch failed")))
     response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
     assert response.status_code == 500
+
+
+def test_predict_simple_valid_input_returns_200(client):
+    with patch("src.api.routes.get_weather", return_value=MOCK_WEATHER), \
+         patch("src.api.routes.predict_simple", return_value=60.5), \
+         patch("src.api.routes.insert_prediction"):
+        resp = client.post("/api/v1/predict/simple", json={
+            "lights": 0, "T1": 19.89, "location": "Lagos"
+        })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "predicted_wh" in body
+    assert "predicted_kwh" in body
+    assert "estimated_cost_ngn" in body
+    assert "weather_factors" in body
+    assert body["predicted_wh"] == pytest.approx(60.5)
+    assert body["predicted_kwh"] == pytest.approx(0.0605)
+    assert body["weather_factors"] == MOCK_WEATHER
+
+
+def test_predict_simple_unknown_city_returns_500(client):
+    with patch("src.api.routes.get_weather",
+               side_effect=HTTPException(status_code=500, detail="Weather fetch failed")):
+        resp = client.post("/api/v1/predict/simple", json={
+            "lights": 0, "T1": 19.89, "location": "UnknownXYZ"
+        })
+    assert resp.status_code == 500
 
 
 @pytest.fixture
