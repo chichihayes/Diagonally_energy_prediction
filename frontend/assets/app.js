@@ -215,6 +215,29 @@ async function loadDashboard() {
   }
 }
 
+async function refreshDashboard() {
+  const banner = document.getElementById('error-banner');
+  try {
+    const prediction = await fetchLatestPrediction();
+    banner.hidden = true;
+    populateHeroCard(prediction);
+    populateSensorGrid(prediction.input_features);
+    populateWeatherStrip(prediction.input_features);
+  } catch {
+    banner.textContent = 'Auto-refresh failed. Showing last known data.';
+    banner.hidden = false;
+  }
+}
+
+function startAutoRefresh(intervalMs) {
+  return setInterval(refreshDashboard, intervalMs);
+}
+
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+
 if (document.getElementById('hero-card')) {
-  document.addEventListener('DOMContentLoaded', loadDashboard);
+  document.addEventListener('DOMContentLoaded', async () => {
+    await loadDashboard();
+    startAutoRefresh(REFRESH_INTERVAL_MS);
+  });
 }
