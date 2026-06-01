@@ -56,13 +56,45 @@ function setLoading(on) {
     : 'Get Prediction';
 }
 
+async function submitPrediction(payload) {
+  const res = await fetch('/api/v1/predict/simple', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status} — ${text}`);
+  }
+  return res.json();
+}
+
+function renderResult(data) {
+  document.getElementById('result-wh').textContent = `${data.predicted_wh} Wh`;
+  document.getElementById('result-kwh').textContent = `${data.predicted_kwh} kWh`;
+  document.getElementById('result-cost').textContent = `₦${data.estimated_cost_ngn}`;
+  const wf = data.weather_factors;
+  document.getElementById('result-t-out').textContent = `${wf.T_out} °C`;
+  document.getElementById('result-rh-out').textContent = `${wf.RH_out} %`;
+  document.getElementById('result-windspeed').textContent = `${wf.Windspeed} m/s`;
+  document.getElementById('result-visibility').textContent = `${wf.Visibility} km`;
+  document.getElementById('result-tdewpoint').textContent = `${wf.Tdewpoint} °C`;
+  document.getElementById('result-card').classList.remove('hidden');
+}
+
+function renderError(message) {
+  document.getElementById('error-message').textContent = message;
+  document.getElementById('error-container').classList.remove('hidden');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('prediction-form');
   if (!form) return;
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearErrors();
+    document.getElementById('error-container').classList.add('hidden');
     const values = getFormValues();
     const errors = validateForm(values);
     if (Object.keys(errors).length > 0) {
@@ -70,6 +102,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     setLoading(true);
-    // Issue 002 handles the API call
+    try {
+      const data = await submitPrediction({
+        lights: Number(values.lights),
+        T1: Number(values.t1),
+        location: values.city,
+      });
+      renderResult(data);
+    } catch (err) {
+      renderError(err.message);
+    } finally {
+      setLoading(false);
+    }
   });
 });
