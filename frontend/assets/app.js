@@ -73,3 +73,74 @@ document.addEventListener('DOMContentLoaded', () => {
     // Issue 002 handles the API call
   });
 });
+
+// ── Dashboard (dashboard.html) ────────────────────────────────────────────────
+
+async function fetchLatestPrediction() {
+  const resp = await fetch('/api/v1/predictions?tier=full&limit=1');
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.length === 0) throw new Error('empty');
+  return data[0];
+}
+
+function populateHeroCard(prediction) {
+  document.getElementById('predicted-wh').textContent = prediction.predicted_wh;
+  document.getElementById('predicted-kwh').textContent = prediction.predicted_kwh;
+  document.getElementById('estimated-cost').textContent =
+    '₦' + prediction.estimated_cost_ngn.toFixed(2);
+  document.getElementById('last-updated').textContent =
+    new Date(prediction.created_at).toLocaleString();
+}
+
+function populateSensorGrid(features) {
+  for (let i = 1; i <= 9; i++) {
+    const tile = document.querySelector(`[data-room="${i}"]`);
+    if (!tile) continue;
+    tile.querySelector('.room-temp').textContent = features[`T${i}`];
+    tile.querySelector('.room-humidity').textContent = features[`RH_${i}`];
+  }
+}
+
+function populateWeatherStrip(f) {
+  document.getElementById('w-t-out').textContent = f.T_out;
+  document.getElementById('w-rh-out').textContent = f.RH_out;
+  document.getElementById('w-windspeed').textContent = f.Windspeed;
+  document.getElementById('w-visibility').textContent = f.Visibility;
+  document.getElementById('w-tdewpoint').textContent = f.Tdewpoint;
+}
+
+function showSkeleton() {
+  document.getElementById('hero-card').classList.add('animate-pulse');
+}
+
+function hideSkeleton() {
+  document.getElementById('hero-card').classList.remove('animate-pulse');
+}
+
+function showError(message) {
+  const banner = document.getElementById('error-banner');
+  banner.textContent = message;
+  banner.hidden = false;
+}
+
+async function loadDashboard() {
+  showSkeleton();
+  try {
+    const prediction = await fetchLatestPrediction();
+    populateHeroCard(prediction);
+    populateSensorGrid(prediction.input_features);
+    populateWeatherStrip(prediction.input_features);
+  } catch (err) {
+    const msg = err.message === 'empty'
+      ? 'No predictions found. Wait for the next scheduled reading.'
+      : 'Failed to load dashboard data. Please try again.';
+    showError(msg);
+  } finally {
+    hideSkeleton();
+  }
+}
+
+if (document.getElementById('hero-card')) {
+  document.addEventListener('DOMContentLoaded', loadDashboard);
+}

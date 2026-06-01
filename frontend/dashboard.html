@@ -9,8 +9,14 @@
 </head>
 <body class="bg-gray-50 min-h-screen p-4">
 
+  <!-- Error banner — hidden until a fetch failure occurs -->
+  <div id="error-banner" hidden
+       class="max-w-2xl mx-auto mb-4 bg-red-50 border border-red-200
+              text-red-700 rounded-xl p-4 text-sm">
+  </div>
+
   <!-- Hero Card -->
-  <section class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6 mb-6">
+  <section id="hero-card" class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6 mb-6 animate-pulse">
     <h1 class="text-lg font-semibold text-gray-700 mb-4">Current Prediction</h1>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
       <div>
