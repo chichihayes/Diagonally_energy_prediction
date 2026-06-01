@@ -29,6 +29,19 @@ def assemble_simple_features(lights: int, T1: float, weather: dict) -> dict:
     }
 
 
+def build_lag_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    series = df["Appliances"].copy()
+    lags = pd.DataFrame({
+        "lag_1h": series.shift(6),
+        "lag_24h": series.shift(144),
+        "lag_168h": series.shift(1008),
+        "rolling_mean_3h": series.shift(1).rolling(18).mean(),
+        "rolling_mean_24h": series.shift(1).rolling(144).mean(),
+    }, index=df.index)
+    combined = lags.join(series).dropna()
+    return combined.drop("Appliances", axis=1), combined["Appliances"]
+
+
 def assemble_full_features(lights: int, sensors: dict, weather: dict) -> dict:
     return {
         "lights": lights,

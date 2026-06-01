@@ -100,3 +100,17 @@ def test_train_simple_produces_loadable_model(tmp_path):
     }])
     result = model.predict(sample)
     assert isinstance(float(result[0]), float)
+
+
+def test_train_forecast_produces_loadable_model(tmp_path):
+    import joblib
+    from src.model.train_forecast import train_and_save
+    out = tmp_path / "model_forecast.joblib"
+    train_and_save(output_path=str(out))
+    assert out.exists()
+    artifact = joblib.load(str(out))
+    assert "model" in artifact
+    assert "model_type" in artifact
+    assert artifact["model_type"] in {
+        "Prophet", "XGBoost_lags", "LightGBM_lags", "LSTM", "TFT"
+    }
