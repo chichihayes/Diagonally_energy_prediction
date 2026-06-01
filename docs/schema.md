@@ -121,3 +121,26 @@ Trained on a reduced feature set for homeowners with no room sensors.
 | location | text | Nullable — city name supplied by Basic tier |
 | inputs | jsonb | Feature values submitted to the model |
 | created_at | timestamptz | Auto-set on insert |
+
+---
+
+## Forecast Output Schema
+| Field | Type | Description |
+|---|---|---|
+| ds | datetime | Forecast timestamp |
+| yhat | float | Predicted consumption in Wh |
+| yhat_lower | float | Lower confidence bound in Wh |
+| yhat_upper | float | Upper confidence bound in Wh |
+| predicted_kwh | float | yhat converted to kWh |
+| estimated_cost_ngn | float | Cost in NGN at NERC tariff rate |
+| optimistic_bill_ngn | float | Month bill using yhat_lower |
+| pessimistic_bill_ngn | float | Month bill using yhat_upper |
+| most_likely_bill_ngn | float | Month bill using yhat |
+
+## Model Leaderboard Schema
+| Field | Type | Description |
+|---|---|---|
+| model | string | Model name |
+| r2 | float | R² score (regression models) |
+| mape | float | MAPE score (forecast models) |
+| winner | boolean | True if this model was selected |

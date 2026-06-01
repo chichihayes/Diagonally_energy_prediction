@@ -1,0 +1,148 @@
+<!--
+PROTOTYPE SHELL TEMPLATE
+
+The shell wraps the simulated app and provides developer tools:
+- Device frame toggle (mobile / tablet / desktop)
+- State switcher (force empty / loading / error / partial / populated state on any screen)
+- Screen jumper (jump directly to any screen by name)
+- Route display (shows the current hash route)
+- Back/reset controls (prototype-level history)
+- Notes panel (shows the spec excerpt for the current screen)
+
+The shell is for the person reviewing the prototype, not for end users.
+It should not be confused with the app's own navigation chrome.
+
+Use this template as the outer structure; the app itself goes inside the .device-screen.
+-->
+
+<div class="proto-shell">
+
+  <!-- LEFT PANEL: Controls -->
+  <aside class="panel panel-left">
+
+    <!-- Branding -->
+    <div style="margin-bottom: 24px;">
+      <div style="font-size: 16px; font-weight: 600;">[Product Name]</div>
+      <div style="font-size: 12px; color: #A1A1AA;">v1.0 prototype</div>
+    </div>
+
+    <!-- Device toggle -->
+    <h2>Device</h2>
+    <div style="display: flex; gap: 6px; margin-bottom: 20px;">
+      <button @click="device = 'mobile'" :class="device === 'mobile' && 'active'">📱 Mobile</button>
+      <button @click="device = 'tablet'" :class="device === 'tablet' && 'active'">📲 Tablet</button>
+      <button @click="device = 'desktop'" :class="device === 'desktop' && 'active'">🖥 Desktop</button>
+    </div>
+
+    <!-- Screen jumper -->
+    <h2>Jump to screen</h2>
+    <input
+      type="text"
+      x-model="screenFilter"
+      placeholder="Filter..."
+      style="width: 100%; padding: 6px 8px; background: #3F3F46; color: #FAFAFA; border: none; border-radius: 6px; margin-bottom: 6px; font-size: 12px;"
+    />
+    <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 20px; max-height: 300px; overflow-y: auto;">
+      <template x-for="screen in filteredScreens()" :key="screen.id">
+        <button
+          @click="navigate(screen.route)"
+          :class="currentScreen === screen.id && 'active'"
+          style="text-align: left; padding: 8px 12px;"
+        >
+          <div style="font-weight: 500;" x-text="screen.name"></div>
+          <div style="font-size: 10px; opacity: 0.7;" x-text="screen.route"></div>
+        </button>
+      </template>
+    </div>
+
+    <!-- State switcher -->
+    <h2>Force state</h2>
+    <div style="font-size: 11px; color: #A1A1AA; margin-bottom: 8px;">
+      View any screen in a specific state. Tap again to clear.
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 20px;">
+      <template x-for="s in availableStates" :key="s">
+        <button
+          @click="forcedState = forcedState === s ? null : s"
+          :class="forcedState === s && 'active'"
+          x-text="s"
+          style="font-size: 11px;"
+        ></button>
+      </template>
+    </div>
+
+    <!-- Prototype controls -->
+    <h2>Prototype controls</h2>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+      <button @click="back()">← Back</button>
+      <button @click="reset()">↻ Reset</button>
+    </div>
+
+    <!-- Debug info -->
+    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #3F3F46; font-size: 11px; color: #71717A;">
+      <div style="margin-bottom: 4px;">Route: <code style="color: #FAFAFA;" x-text="currentRoute"></code></div>
+      <div style="margin-bottom: 4px;">Screen: <code style="color: #FAFAFA;" x-text="currentScreen"></code></div>
+      <div style="margin-bottom: 4px;">Tab: <code style="color: #FAFAFA;" x-text="currentTab"></code></div>
+      <div>Stack depth: <code style="color: #FAFAFA;" x-text="history.length"></code></div>
+    </div>
+  </aside>
+
+  <!-- CENTER: The actual app inside a device frame -->
+  <main class="device-frame-wrap">
+    <div class="device-frame" :class="device">
+      <div class="device-screen">
+
+        <!-- ====== APP CONTENT GOES HERE ====== -->
+        <!--
+          For each screen in the spec, add a template:
+          <template x-if="currentScreen === 'home'">
+            ... render Home with its states based on effectiveState() ...
+          </template>
+        -->
+
+        <!-- Toast (overlay) -->
+        <template x-if="toast">
+          <div class="toast" x-text="toast"></div>
+        </template>
+
+        <!-- Modal (overlay) -->
+        <template x-if="modal">
+          <div class="modal-backdrop" @click.self="closeModal()">
+            <div class="modal">
+              <!-- Render modal content based on modal.type -->
+            </div>
+          </div>
+        </template>
+
+        <!-- Bottom sheet (overlay) -->
+        <template x-if="sheet">
+          <div class="sheet-backdrop" @click.self="closeSheet()">
+            <div class="sheet">
+              <!-- Render sheet content based on sheet.type -->
+            </div>
+          </div>
+        </template>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT PANEL: Spec notes for current screen -->
+  <aside class="panel panel-right">
+    <h2>Spec notes</h2>
+    <div x-html="currentScreenNotes()" style="font-size: 12px; line-height: 1.6; color: #D4D4D8;"></div>
+
+    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #3F3F46;">
+      <h2>How to use this prototype</h2>
+      <ul style="padding-left: 20px; font-size: 11px; color: #A1A1AA; line-height: 1.7;">
+        <li>Tap inside the device to use the app</li>
+        <li>Use Jump to screen to land anywhere</li>
+        <li>Use Force state to view edge cases (empty, loading, error)</li>
+        <li>Use Reset to restart from a clean state</li>
+        <li>Resize device to test responsive behavior</li>
+        <li>Browser back/forward also works</li>
+      </ul>
+    </div>
+  </aside>
+
+</div>

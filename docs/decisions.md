@@ -1,87 +1,50 @@
 # docs/decisions.md — Diagonally Energy Prediction
 
-## ADR-001: Train both Random Forest and XGBoost; save the best
+## ADR-001: Six regression models evaluated for Layer 1
+Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees and Ridge Regression 
+all trained and evaluated on same feature sets. Best R² on held-out test split 
+saved as final model. This approach ensures we pick the objectively best model 
+rather than assuming one will win.
 
-Train both models on the same dataset and evaluate R² on a held-out 20% test split. Save the one with the higher R² as the production model. Both are saved as separate `.joblib` files so the losing model can be inspected.
+## ADR-002: Five time series models evaluated for Layer 2
+Prophet, XGBoost with lag features, LightGBM with lag features, LSTM and TFT 
+(Temporal Fusion Transformer) all trained and evaluated. Best MAPE on held-out 
+test split saved as model_forecast.joblib. TFT is state of the art for time 
+series — included to maximise forecast accuracy.
 
-**Why:** RF is robust to multicollinearity across 28 correlated T/RH features and requires no feature scaling. XGBoost typically outperforms on tabular regression. Training both and picking the winner is low-cost and eliminates the need to guess upfront.
+## ADR-003: TFT and LSTM via neuralforecast library
+neuralforecast provides a unified scikit-learn style API for neural time series 
+models including TFT and LSTM. Chosen over raw PyTorch to reduce boilerplate 
+and keep training code consistent across all five forecast models.
 
----
+## ADR-004: Two separate regression models saved
+model_full.joblib trained on 26 features for Smart Home tier.
+model_simple.joblib trained on 7 features for Basic tier.
+Basic tier users have no sensors — simpler model gives meaningful predictions 
+without requiring all 26 inputs.
 
-## ADR-002: Two separate model files (model_full, model_simple)
+## ADR-005: rv1 and rv2 dropped at preprocessing
+Random noise variables added by dataset authors to test model robustness. 
+No predictive value — confirmed by feature importance across all models.
 
-`model_full.joblib` is trained on all 25 features. `model_simple.joblib` is trained separately on 7 features (lights, T1, T_out, RH_out, Windspeed, Visibility, Tdewpoint).
+## ADR-006: OpenWeatherMap free tier for outside weather
+Supplies T_out, RH_out, Windspeed, Visibility, Tdewpoint, Press_mm_hg 
+automatically. Responses cached 10 minutes to keep predictions under 2 seconds 
+and stay within free tier rate limits.
 
-**Why:** Basic tier users have no room sensors. A model trained on 25 features cannot run on 7 inputs. Training a dedicated 7-feature model on the same dataset lets Basic tier users get meaningful predictions without imputing the missing 18 sensor values.
+## ADR-007: Prophet confidence intervals for bill projection
+Monthly bill returned as optimistic (yhat_lower), most likely (yhat) and 
+pessimistic (yhat_upper) range. Homeowners get a realistic picture rather than 
+a single number that may mislead them.
 
----
+## ADR-008: APScheduler runs inside FastAPI process
+Chosen over a separate cron job or Celery worker to keep deployment simple for 
+the demo. Submits Smart Home readings every 15 minutes automatically on startup.
 
-## ADR-003: rv1 and rv2 dropped at preprocessing
+## ADR-009: joblib for all model persistence
+Standard for scikit-learn models. Fast load of numpy arrays. All three models 
+loaded once at startup as singletons — never reloaded per request.
 
-These two columns are dropped in `data_loader.py` before any feature matrix is built.
-
-**Why:** Random noise variables added by the UCI dataset authors to test model robustness. No predictive value. Keeping them would add noise and inflate feature count.
-
----
-
-## ADR-004: lights kept as input feature, not folded into target
-
-`lights` is a separate sensor reading from the `Appliances` target. It is treated as an input feature for both tiers.
-
-**Why:** The dataset authors measured lights and appliances with separate sensors. lights energy is not included in the Appliances total — it is an independent reading that correlates with overall home activity.
-
----
-
-## ADR-005: OpenWeatherMap free tier, cached 10 minutes in memory
-
-A single `weather.py` module wraps the OWM Current Weather API. Responses are stored in a module-level dict keyed by city name, with a timestamp. Any call within 10 minutes of the last fetch returns the cached value.
-
-**Why:** Free tier rate limits make per-request calls risky at scale. 10-minute caching aligns with the dataset's own 10-minute measurement interval and keeps predictions well under the 2-second target.
-
----
-
-## ADR-006: Supabase (Postgres) for prediction storage
-
-Every successful prediction is inserted into a `predictions` table in Supabase via the Supabase Python client.
-
-**Why:** Managed Postgres with a simple REST/Python SDK — no infrastructure to run. Enables the Basic tier history view and Smart Home dashboard with no extra backend work.
-
----
-
-## ADR-007: APScheduler runs inside the FastAPI process
-
-APScheduler is started in the FastAPI lifespan event (`main.py`) and fires every 15 minutes to submit Smart Home sensor readings to `/api/v1/predict/full`.
-
-**Why:** No separate worker process or queue needed for a demo. APScheduler integrates directly with FastAPI's async lifecycle. If a separate worker is needed later, the scheduler can be extracted without changing `routes.py`.
-
----
-
-## ADR-008: NERC tariff rate stored in environment variable
-
-The cost calculation is `predicted_kwh × NERC_TARIFF_NGN_PER_KWH`. The rate is read from the environment at startup — never hardcoded.
-
-**Why:** Electricity tariffs change. An env var allows the rate to be updated without a code change or redeploy.
-
----
-
-## ADR-009: joblib for model persistence
-
-Both models are saved and loaded with `joblib.dump` / `joblib.load`.
-
-**Why:** Standard for scikit-learn. Faster load than pickle for numpy arrays. Models are loaded once at startup as module-level singletons — never reloaded per request.
-
----
-
-## ADR-010: No user authentication for the demo
-
-There is no login, session, or token system.
-
-**Why:** Out of scope per PRD. Adding auth at demo stage would double implementation time with no user-facing value. Can be added as a separate feature if the system moves to production.
-
----
-
-## ADR-011: Pure HTML + JS + Tailwind CDN for frontend
-
-No JavaScript framework, no build step, no bundler. Tailwind is loaded from CDN.
-
-**Why:** Fastest path to a responsive demo frontend. A framework would require a build pipeline, node_modules, and deployment complexity that adds no value for a single-page prediction form and dashboard.
+## ADR-010: NERC tariff rate in environment variable
+Rate can change without a redeploy. Applied to predicted kWh for both current 
+prediction and monthly bill projection.
