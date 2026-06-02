@@ -83,23 +83,7 @@ Trained on all sensor + weather features after dropping `date`, `rv1`, `rv2`, an
 
 ---
 
-## model_simple — Basic Tier (7 input features)
-
-Trained on a reduced feature set for homeowners with no room sensors.
-
-| Feature | Type | Unit | Source |
-|---|---|---|---|
-| lights | int | Wh | Manual input |
-| T1 | float | °C | Manual input (main room thermometer) |
-| T_out | float | °C | OpenWeatherMap (auto-fetched by location) |
-| RH_out | float | % | OpenWeatherMap |
-| Windspeed | float | m/s | OpenWeatherMap |
-| Visibility | float | km | OpenWeatherMap |
-| Tdewpoint | float | °C | OpenWeatherMap |
-
----
-
-## API Output Shape (both tiers)
+## API Output Shape
 
 | Field | Type | Unit | Description |
 |---|---|---|---|
