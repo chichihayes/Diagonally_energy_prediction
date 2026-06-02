@@ -254,3 +254,26 @@ Returns the most recent drift check result from the drift_log table.
 |---|---|
 | 404  | No drift check has been run yet |
 | 500  | Failed to retrieve drift status from database |
+
+---
+
+## GET /api/v1/monitor/retrain
+
+Returns the most recent retraining outcome from the retrain_log table.
+
+**Response — 200:**
+```json
+{
+  "timestamp": "2026-06-01T10:00:00+00:00",
+  "old_model_r2": 0.75,
+  "new_model_r2": 0.85,
+  "model_replaced": true,
+  "rows_used": 2500
+}
+```
+
+**Errors:**
+| Code | Meaning |
+|---|---|
+| 404  | No retraining has run yet |
+| 500  | Supabase query error |
