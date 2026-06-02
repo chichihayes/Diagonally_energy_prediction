@@ -14,7 +14,6 @@ from src.model.predict import predict_simple, predict_full
 from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
 from src.services.cost import wh_to_cost, project_monthly_bill
 from src.services.database import insert_prediction, supabase
-from src.model.forecast import forecast_7d
 
 router = APIRouter(prefix="/api/v1")
 
