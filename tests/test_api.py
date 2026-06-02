@@ -572,3 +572,36 @@ def test_get_leaderboard_returns_503_when_leaderboard_file_absent(tmp_path):
 
     assert response.status_code == 503
     assert "run training scripts" in response.json()["detail"].lower()
+
+
+# ── GET /api/v1/monitor/drift ─────────────────────────────────────────────────
+
+def test_get_monitor_drift_returns_200_with_latest_event(client):
+    mock_event = {
+        "timestamp": "2026-06-01T10:00:00Z",
+        "drift_detected": True,
+        "drifted_features": ["T1"],
+        "deviations": {"T1": 20.5},
+        "clean_row_count": 100,
+    }
+    with patch("src.api.routes.database.get_latest_drift_event", return_value=mock_event):
+        response = client.get("/api/v1/monitor/drift")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["drift_detected"] is True
+    assert body["drifted_features"] == ["T1"]
+    assert body["deviations"]["T1"] == 20.5
+    assert body["clean_row_count"] == 100
+
+
+def test_get_monitor_drift_returns_404_when_no_data(client):
+    with patch("src.api.routes.database.get_latest_drift_event", return_value=None):
+        response = client.get("/api/v1/monitor/drift")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No drift check has been run yet"
+
+
+def test_get_monitor_drift_returns_500_on_db_error(client):
+    with patch("src.api.routes.database.get_latest_drift_event", side_effect=Exception("db connection failed")):
+        response = client.get("/api/v1/monitor/drift")
+    assert response.status_code == 500
