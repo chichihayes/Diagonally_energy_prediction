@@ -231,3 +231,26 @@ Returns R² scores for all regression models and MAPE scores for all forecast mo
 ```json
 { "status": "ok" }
 ```
+
+---
+
+## GET /api/v1/monitor/drift
+
+Returns the most recent drift check result from the drift_log table.
+
+**Response — 200:**
+```json
+{
+  "timestamp": "2026-06-01T10:00:00Z",
+  "drift_detected": true,
+  "drifted_features": ["T1", "RH_2"],
+  "deviations": {"T1": 20.5, "RH_2": 16.1},
+  "clean_row_count": 100
+}
+```
+
+**Errors:**
+| Code | Meaning |
+|---|---|
+| 404  | No drift check has been run yet |
+| 500  | Failed to retrieve drift status from database |

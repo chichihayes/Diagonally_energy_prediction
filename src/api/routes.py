@@ -170,3 +170,14 @@ def get_forecast_7d(location: str = None):
         "lowest_day": result["lowest_day"],
         "projected_month_bill": bill,
     }
+
+
+@router.get("/monitor/drift")
+def get_drift_status():
+    try:
+        event = database.get_latest_drift_event()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to retrieve drift status")
+    if event is None:
+        raise HTTPException(status_code=404, detail="No drift check has been run yet")
+    return event
