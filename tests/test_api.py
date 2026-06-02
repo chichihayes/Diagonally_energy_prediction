@@ -358,3 +358,66 @@ def test_forecast_7d_model_error_returns_500():
     with patch("src.api.routes.forecast_7d", side_effect=Exception("model crashed")):
         response = client.get("/api/v1/forecast/7d?location=Lagos")
     assert response.status_code == 500
+
+
+# ── GET /api/v1/forecast/24h ──────────────────────────────────────────────────
+
+_MOCK_FORECAST_24H = [
+    {
+        "ds": f"2026-06-01T{h:02d}:00:00Z",
+        "yhat": float(100 + h * 10),
+        "yhat_lower": float(80 + h * 10),
+        "yhat_upper": float(120 + h * 10),
+        "predicted_kwh": round((100 + h * 10) / 1000, 3),
+        "estimated_cost_ngn": round((100 + h * 10) / 1000 * 68.0, 2),
+    }
+    for h in range(24)
+]
+
+
+@pytest.fixture
+def mock_forecast_24h():
+    with patch("src.api.routes._forecast_24h", return_value=_MOCK_FORECAST_24H) as m:
+        yield m
+
+
+def test_forecast_24h_valid_location_returns_200(client, mock_forecast_24h):
+    resp = client.get("/api/v1/forecast/24h?location=Lagos")
+    assert resp.status_code == 200
+
+
+def test_forecast_24h_forecast_array_has_24_elements(client, mock_forecast_24h):
+    resp = client.get("/api/v1/forecast/24h?location=Lagos")
+    assert len(resp.json()["forecast"]) == 24
+
+
+def test_forecast_24h_each_item_has_required_fields(client, mock_forecast_24h):
+    resp = client.get("/api/v1/forecast/24h?location=Lagos")
+    required = {"hour", "predicted_wh", "predicted_kwh", "lower_wh", "upper_wh", "estimated_cost_ngn"}
+    for item in resp.json()["forecast"]:
+        assert set(item.keys()) == required
+
+
+def test_forecast_24h_peak_hour_is_highest_predicted_wh(client, mock_forecast_24h):
+    resp = client.get("/api/v1/forecast/24h?location=Lagos")
+    data = resp.json()
+    max_item = max(data["forecast"], key=lambda x: x["predicted_wh"])
+    assert data["peak_hour"] == max_item["hour"]
+
+
+def test_forecast_24h_lowest_hour_is_lowest_predicted_wh(client, mock_forecast_24h):
+    resp = client.get("/api/v1/forecast/24h?location=Lagos")
+    data = resp.json()
+    min_item = min(data["forecast"], key=lambda x: x["predicted_wh"])
+    assert data["lowest_hour"] == min_item["hour"]
+
+
+def test_forecast_24h_missing_location_returns_400(client):
+    resp = client.get("/api/v1/forecast/24h")
+    assert resp.status_code == 400
+
+
+def test_forecast_24h_model_error_returns_500(client):
+    with patch("src.api.routes._forecast_24h", side_effect=RuntimeError("model failed")):
+        resp = client.get("/api/v1/forecast/24h?location=Lagos")
+        assert resp.status_code == 500
