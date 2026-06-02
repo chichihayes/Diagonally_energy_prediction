@@ -36,3 +36,15 @@ def get_latest_drift_event() -> dict | None:
 
 def store_anomaly(record: dict) -> None:
     supabase.table("anomalies").insert(record).execute()
+
+
+def get_last_n_clean_readings(n: int) -> list[dict]:
+    result = (
+        supabase.table("predictions")
+        .select("input_features")
+        .eq("low_confidence", False)
+        .order("created_at", desc=True)
+        .limit(n)
+        .execute()
+    )
+    return [row["input_features"] for row in result.data]
