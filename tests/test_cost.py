@@ -67,3 +67,32 @@ def test_wh_to_cost_reads_tariff_from_env(monkeypatch):
     importlib.reload(cost_module)
     _, ngn = cost_module.wh_to_cost(1000.0)
     assert ngn == pytest.approx(100.00)
+
+
+_COST_MOCK_FORECAST = [
+    {"predicted_wh": 6000.0, "lower_wh": 4000.0, "upper_wh": 8000.0},
+] * 7
+# sum(lower_wh) = 28000 Wh = 28 kWh  →  28 * (30/7) * 68 = 8160.00
+# sum(predicted) = 42000 Wh = 42 kWh  →  42 * (30/7) * 68 = 12240.00
+# sum(upper_wh) = 56000 Wh = 56 kWh   →  56 * (30/7) * 68 = 16320.00
+
+
+def test_project_monthly_bill_optimistic_uses_lower_wh():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_COST_MOCK_FORECAST)
+    assert result["optimistic_ngn"] == pytest.approx(8160.00, abs=0.01)
+
+
+def test_project_monthly_bill_most_likely_uses_predicted_wh():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_COST_MOCK_FORECAST)
+    assert result["most_likely_ngn"] == pytest.approx(12240.00, abs=0.01)
+
+
+def test_project_monthly_bill_pessimistic_uses_upper_wh():
+    from src.services.cost import project_monthly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+        result = project_monthly_bill(_COST_MOCK_FORECAST)
+    assert result["pessimistic_ngn"] == pytest.approx(16320.00, abs=0.01)
