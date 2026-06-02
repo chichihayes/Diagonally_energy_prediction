@@ -56,6 +56,8 @@ def mock_predict_simple_deps(monkeypatch):
     monkeypatch.setattr("src.api.routes.get_weather", lambda city: weather)
     monkeypatch.setattr("src.api.routes.predict_simple", lambda features: 60.5)
     monkeypatch.setattr("src.api.routes.insert_prediction", lambda row: None)
+    monkeypatch.setattr("src.api.routes.check_anomaly", lambda features: {"is_anomaly": False, "z_scores": {}, "flagged_features": []})
+    monkeypatch.setattr("src.api.routes.store_anomaly", lambda record: None)
     monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
     return weather
 
@@ -68,7 +70,7 @@ def test_predict_simple_returns_200(client, mock_predict_simple_deps):
 def test_predict_simple_response_shape(client, mock_predict_simple_deps):
     response = client.post("/api/v1/predict/simple", json={"lights": 0, "T1": 19.89, "location": "Lagos"})
     body = response.json()
-    assert set(body.keys()) == {"predicted_wh", "predicted_kwh", "estimated_cost_ngn", "weather_factors"}
+    assert set(body.keys()) == {"predicted_wh", "predicted_kwh", "estimated_cost_ngn", "weather_factors", "low_confidence"}
 
 
 def test_predict_simple_kwh_equals_wh_over_1000(client, mock_predict_simple_deps):
@@ -104,7 +106,9 @@ def test_predict_simple_weather_error_propagates(client, monkeypatch):
 def test_predict_simple_valid_input_returns_200(client):
     with patch("src.api.routes.get_weather", return_value=MOCK_WEATHER), \
          patch("src.api.routes.predict_simple", return_value=60.5), \
-         patch("src.api.routes.insert_prediction"):
+         patch("src.api.routes.insert_prediction"), \
+         patch("src.api.routes.check_anomaly", return_value={"is_anomaly": False, "z_scores": {}, "flagged_features": []}), \
+         patch("src.api.routes.store_anomaly"):
         resp = client.post("/api/v1/predict/simple", json={
             "lights": 0, "T1": 19.89, "location": "Lagos"
         })
@@ -225,6 +229,8 @@ def mock_predict_full_deps(monkeypatch):
     monkeypatch.setattr("src.api.routes.get_weather", lambda city: _MOCK_WEATHER_FULL)
     monkeypatch.setattr("src.api.routes.predict_full", lambda features: 84.3)
     monkeypatch.setattr("src.api.routes.insert_prediction", lambda row: None)
+    monkeypatch.setattr("src.api.routes.check_anomaly", lambda features: {"is_anomaly": False, "z_scores": {}, "flagged_features": []})
+    monkeypatch.setattr("src.api.routes.store_anomaly", lambda record: None)
     monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
 
 
@@ -232,7 +238,7 @@ def test_predict_full_valid_body_returns_200_with_all_fields(client, mock_predic
     response = client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
     assert response.status_code == 200
     data = response.json()
-    assert set(data.keys()) == {"predicted_wh", "predicted_kwh", "estimated_cost_ngn"}
+    assert set(data.keys()) == {"predicted_wh", "predicted_kwh", "estimated_cost_ngn", "low_confidence"}
     assert data["predicted_wh"] == pytest.approx(84.3)
 
 
@@ -268,6 +274,8 @@ def test_predict_full_calls_insert_prediction_once_with_tier_full(client, monkey
     monkeypatch.setattr("src.api.routes.get_weather", lambda city: _MOCK_WEATHER_FULL)
     monkeypatch.setattr("src.api.routes.predict_full", lambda features: 84.3)
     monkeypatch.setattr("src.api.routes.insert_prediction", mock_insert)
+    monkeypatch.setattr("src.api.routes.check_anomaly", lambda features: {"is_anomaly": False, "z_scores": {}, "flagged_features": []})
+    monkeypatch.setattr("src.api.routes.store_anomaly", lambda record: None)
     monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
     client.post("/api/v1/predict/full", json=_VALID_FULL_BODY)
     mock_insert.assert_called_once()
@@ -572,3 +580,85 @@ def test_get_leaderboard_returns_503_when_leaderboard_file_absent(tmp_path):
 
     assert response.status_code == 503
     assert "run training scripts" in response.json()["detail"].lower()
+
+
+# ── low_confidence flag tests ─────────────────────────────────────────────────
+
+MOCK_WEATHER_FULL = {
+    "T_out": 28.0, "Press_mm_hg": 733.0, "RH_out": 80.0,
+    "Windspeed": 3.0, "Visibility": 10.0, "Tdewpoint": 25.0,
+}
+MOCK_WEATHER_SIMPLE = {
+    "T_out": 28.0, "RH_out": 80.0,
+    "Windspeed": 3.0, "Visibility": 10.0, "Tdewpoint": 25.0,
+}
+FULL_PAYLOAD = {
+    "lights": 0, "T1": 20.0, "RH_1": 47.0, "T2": 19.0, "RH_2": 44.0,
+    "T3": 19.0, "RH_3": 44.0, "T4": 17.0, "RH_4": 41.0, "T5": 17.0,
+    "RH_5": 55.0, "T6": 7.0, "RH_6": 84.0, "T7": 17.0, "RH_7": 41.0,
+    "T8": 18.0, "RH_8": 48.0, "T9": 17.0, "RH_9": 45.0, "location": "Lagos",
+}
+ANOMALY_FALSE = {"is_anomaly": False, "z_scores": {}, "flagged_features": []}
+ANOMALY_TRUE  = {"is_anomaly": True,  "z_scores": {"T1": 30.1}, "flagged_features": ["T1"]}
+
+
+def test_predict_full_response_contains_low_confidence_field(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_FALSE), \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_FULL), \
+         patch("src.api.routes.predict_full", return_value=84.3), \
+         patch("src.api.routes.insert_prediction"):
+        resp = client.post("/api/v1/predict/full", json=FULL_PAYLOAD)
+    assert resp.status_code == 200
+    assert "low_confidence" in resp.json()
+    assert resp.json()["low_confidence"] is False
+
+
+def test_predict_simple_response_contains_low_confidence_field(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_FALSE), \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_SIMPLE), \
+         patch("src.api.routes.predict_simple", return_value=60.5), \
+         patch("src.api.routes.insert_prediction"):
+        resp = client.post(
+            "/api/v1/predict/simple",
+            json={"lights": 0, "T1": 20.0, "location": "Lagos"},
+        )
+    assert resp.status_code == 200
+    assert "low_confidence" in resp.json()
+    assert resp.json()["low_confidence"] is False
+
+
+def test_predict_full_anomaly_sets_low_confidence_true(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_TRUE), \
+         patch("src.api.routes.store_anomaly") as mock_store, \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_FULL), \
+         patch("src.api.routes.predict_full", return_value=84.3), \
+         patch("src.api.routes.insert_prediction"):
+        resp = client.post("/api/v1/predict/full", json=FULL_PAYLOAD)
+    assert resp.status_code == 200
+    assert resp.json()["low_confidence"] is True
+    mock_store.assert_called_once()
+
+
+def test_predict_full_no_anomaly_does_not_call_store_anomaly(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_FALSE), \
+         patch("src.api.routes.store_anomaly") as mock_store, \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_FULL), \
+         patch("src.api.routes.predict_full", return_value=84.3), \
+         patch("src.api.routes.insert_prediction"):
+        client.post("/api/v1/predict/full", json=FULL_PAYLOAD)
+    mock_store.assert_not_called()
+
+
+def test_predict_full_store_anomaly_called_with_correct_tier(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_TRUE), \
+         patch("src.api.routes.store_anomaly") as mock_store, \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_FULL), \
+         patch("src.api.routes.predict_full", return_value=84.3), \
+         patch("src.api.routes.insert_prediction"):
+        client.post("/api/v1/predict/full", json=FULL_PAYLOAD)
+    call_record = mock_store.call_args[0][0]
+    assert call_record["tier"] == "full"
+    assert call_record["low_confidence_prediction"] is True
+    assert "z_scores" in call_record
+    assert "flagged_features" in call_record
+    assert "input_features" in call_record

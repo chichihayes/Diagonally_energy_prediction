@@ -13,8 +13,9 @@ from src.services.features import assemble_simple_features, assemble_full_featur
 from src.model.predict import predict_simple, predict_full
 from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
 from src.services.cost import wh_to_cost, project_monthly_bill
-from src.services.database import insert_prediction
+from src.services.database import insert_prediction, store_anomaly
 from src.model.forecast import forecast_7d
+from src.services.monitor import check_anomaly
 
 router = APIRouter(prefix="/api/v1")
 
@@ -29,6 +30,16 @@ class SimplePredictRequest(BaseModel):
 def predict_simple_endpoint(body: SimplePredictRequest):
     weather = get_weather(body.location)
     features = assemble_simple_features(body.lights, body.T1, weather)
+    anomaly_result = check_anomaly(features)
+    if anomaly_result["is_anomaly"]:
+        store_anomaly({
+            "timestamp": datetime.utcnow().isoformat(),
+            "tier": "simple",
+            "input_features": features,
+            "z_scores": anomaly_result["z_scores"],
+            "flagged_features": anomaly_result["flagged_features"],
+            "low_confidence_prediction": True,
+        })
     predicted_wh = predict_simple(features)
     predicted_kwh, estimated_cost_ngn = wh_to_cost(predicted_wh)
     insert_prediction({
@@ -44,6 +55,7 @@ def predict_simple_endpoint(body: SimplePredictRequest):
         "predicted_kwh": predicted_kwh,
         "estimated_cost_ngn": estimated_cost_ngn,
         "weather_factors": weather,
+        "low_confidence": anomaly_result["is_anomaly"],
     }
 
 
@@ -67,6 +79,16 @@ def predict_full_endpoint(body: FullPredictRequest):
     body_dict = body.dict(exclude={"location"})
     lights = body_dict.pop("lights")
     features = assemble_full_features(lights, body_dict, weather)
+    anomaly_result = check_anomaly(features)
+    if anomaly_result["is_anomaly"]:
+        store_anomaly({
+            "timestamp": datetime.utcnow().isoformat(),
+            "tier": "full",
+            "input_features": features,
+            "z_scores": anomaly_result["z_scores"],
+            "flagged_features": anomaly_result["flagged_features"],
+            "low_confidence_prediction": True,
+        })
     predicted_wh = predict_full(features)
     predicted_kwh, estimated_cost_ngn = wh_to_cost(predicted_wh)
     insert_prediction({
@@ -81,6 +103,7 @@ def predict_full_endpoint(body: FullPredictRequest):
         "predicted_wh": predicted_wh,
         "predicted_kwh": predicted_kwh,
         "estimated_cost_ngn": estimated_cost_ngn,
+        "low_confidence": anomaly_result["is_anomaly"],
     }
 
 

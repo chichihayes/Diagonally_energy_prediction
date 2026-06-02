@@ -37,7 +37,8 @@ the API enriches the payload internally.
 {
   "predicted_wh": 84.3,
   "predicted_kwh": 0.0843,
-  "estimated_cost_ngn": 7.21
+  "estimated_cost_ngn": 7.21,
+  "low_confidence": false
 }
 ```
 
@@ -76,7 +77,8 @@ All weather data is fetched and injected automatically.
     "Windspeed": 3.1,
     "Visibility": 10.0,
     "Tdewpoint": 25.1
-  }
+  },
+  "low_confidence": false
 }
 ```
 
