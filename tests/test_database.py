@@ -115,3 +115,80 @@ def test_get_predictions_no_gte_when_since_is_none(mock_supabase):
 
     get_predictions(since=None)
     mock_supabase.gte.assert_not_called()
+
+
+# --- drift_log tests ---
+
+def test_store_drift_event_calls_supabase_insert():
+    from unittest.mock import MagicMock, patch
+    from src.services.database import store_drift_event
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
+    with patch("src.services.database.supabase", mock_client):
+        store_drift_event({
+            "timestamp": "2026-06-01T10:00:00Z",
+            "drift_detected": True,
+            "drifted_features": ["T1"],
+            "deviations": {"T1": 20.0},
+            "clean_row_count": 100,
+        })
+    mock_client.table.assert_called_once_with("drift_log")
+    call_args = mock_client.table.return_value.insert.call_args[0][0]
+    assert call_args["drift_detected"] is True
+    assert call_args["drifted_features"] == ["T1"]
+
+
+def test_store_drift_event_inserts_even_when_no_drift():
+    from unittest.mock import MagicMock, patch
+    from src.services.database import store_drift_event
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
+    with patch("src.services.database.supabase", mock_client):
+        store_drift_event({
+            "timestamp": "2026-06-01T10:00:00Z",
+            "drift_detected": False,
+            "drifted_features": [],
+            "deviations": {},
+            "clean_row_count": 100,
+        })
+    mock_client.table.return_value.insert.assert_called_once()
+
+
+def test_get_latest_drift_event_returns_most_recent_row():
+    from unittest.mock import MagicMock, patch
+    from src.services.database import get_latest_drift_event
+
+    row = {
+        "id": "abc",
+        "timestamp": "2026-06-01T10:00:00Z",
+        "drift_detected": True,
+        "drifted_features": ["T1"],
+        "deviations": {"T1": 20.0},
+        "clean_row_count": 100,
+    }
+    mock_client = MagicMock()
+    chain = mock_client.table.return_value
+    chain.select.return_value = chain
+    chain.order.return_value = chain
+    chain.limit.return_value = chain
+    chain.execute.return_value = MagicMock(data=[row])
+    with patch("src.services.database.supabase", mock_client):
+        result = get_latest_drift_event()
+    assert result == row
+
+
+def test_get_latest_drift_event_returns_none_when_empty():
+    from unittest.mock import MagicMock, patch
+    from src.services.database import get_latest_drift_event
+
+    mock_client = MagicMock()
+    chain = mock_client.table.return_value
+    chain.select.return_value = chain
+    chain.order.return_value = chain
+    chain.limit.return_value = chain
+    chain.execute.return_value = MagicMock(data=[])
+    with patch("src.services.database.supabase", mock_client):
+        result = get_latest_drift_event()
+    assert result is None

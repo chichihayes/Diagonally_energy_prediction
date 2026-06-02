@@ -137,6 +137,19 @@ Trained on a reduced feature set for homeowners with no room sensors.
 | pessimistic_bill_ngn | float | Month bill using yhat_upper |
 | most_likely_bill_ngn | float | Month bill using yhat |
 
+## Supabase — drift_log table
+
+| Column           | Type        | Notes                                       |
+|---|---|---|
+| id               | uuid        | Primary key, auto-generated                 |
+| timestamp        | timestamptz | Auto-set on insert                          |
+| drift_detected   | bool        | True if any feature exceeded 15% deviation  |
+| drifted_features | text[]      | Feature names that exceeded threshold       |
+| deviations       | jsonb       | Feature → deviation_pct for all 25 features |
+| clean_row_count  | int         | Number of clean readings in this window     |
+
+---
+
 ## Model Leaderboard Schema
 | Field | Type | Description |
 |---|---|---|
