@@ -358,3 +358,64 @@ def test_forecast_7d_model_error_returns_500():
     with patch("src.api.routes.forecast_7d", side_effect=Exception("model crashed")):
         response = client.get("/api/v1/forecast/7d?location=Lagos")
     assert response.status_code == 500
+
+
+_MOCK_7D_FORECAST = [
+    {
+        "date": f"2026-06-0{i+1}",
+        "predicted_wh": 6000.0 + i * 200,
+        "predicted_kwh": round((6000.0 + i * 200) / 1000, 6),
+        "lower_wh": 4000.0 + i * 200,
+        "upper_wh": 8000.0 + i * 200,
+        "estimated_cost_ngn": round((6000.0 + i * 200) / 1000 * 68.00, 2),
+    }
+    for i in range(7)
+]
+
+_MOCK_FORECAST_7D_RESULT = {
+    "forecast": _MOCK_7D_FORECAST,
+    "peak_day": "Sunday",
+    "lowest_day": "Monday",
+}
+
+_MOCK_BILL = {
+    "optimistic_ngn": 3200.00,
+    "most_likely_ngn": 4200.00,
+    "pessimistic_ngn": 5100.00,
+}
+
+
+def test_forecast_7d_valid_location_returns_200_with_7_element_array():
+    from src.api.main import app
+    from fastapi.testclient import TestClient
+    from unittest.mock import patch
+    client = TestClient(app)
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT), \
+         patch("src.api.routes.project_monthly_bill", return_value=_MOCK_BILL):
+        response = client.get("/api/v1/forecast/7d?location=Lagos")
+    assert response.status_code == 200
+    assert len(response.json()["forecast"]) == 7
+
+
+def test_forecast_7d_bill_fields_all_present():
+    from src.api.main import app
+    from fastapi.testclient import TestClient
+    from unittest.mock import patch
+    client = TestClient(app)
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT), \
+         patch("src.api.routes.project_monthly_bill", return_value=_MOCK_BILL):
+        response = client.get("/api/v1/forecast/7d?location=Lagos")
+    bill = response.json()["projected_month_bill"]
+    assert {"optimistic_ngn", "most_likely_ngn", "pessimistic_ngn"}.issubset(bill.keys())
+
+
+def test_forecast_7d_bill_ordering_holds():
+    from src.api.main import app
+    from fastapi.testclient import TestClient
+    from unittest.mock import patch
+    client = TestClient(app)
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT), \
+         patch("src.api.routes.project_monthly_bill", return_value=_MOCK_BILL):
+        response = client.get("/api/v1/forecast/7d?location=Lagos")
+    bill = response.json()["projected_month_bill"]
+    assert bill["optimistic_ngn"] <= bill["most_likely_ngn"] <= bill["pessimistic_ngn"]
