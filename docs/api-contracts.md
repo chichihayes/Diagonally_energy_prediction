@@ -229,3 +229,26 @@ Returns R² scores for all regression models and MAPE scores for all forecast mo
 ```json
 { "status": "ok" }
 ```
+
+---
+
+## GET /api/v1/monitor/retrain
+
+Returns the most recent retraining outcome from the retrain_log table.
+
+**Response — 200:**
+```json
+{
+  "timestamp": "2026-06-01T10:00:00+00:00",
+  "old_model_r2": 0.75,
+  "new_model_r2": 0.85,
+  "model_replaced": true,
+  "rows_used": 2500
+}
+```
+
+**Errors:**
+| Code | Meaning |
+|---|---|
+| 404  | No retraining has run yet |
+| 500  | Supabase query error |

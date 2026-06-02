@@ -13,7 +13,7 @@ from src.services.features import assemble_simple_features, assemble_full_featur
 from src.model.predict import predict_simple, predict_full
 from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
 from src.services.cost import wh_to_cost, project_monthly_bill
-from src.services.database import insert_prediction
+from src.services.database import insert_prediction, supabase
 from src.model.forecast import forecast_7d
 
 router = APIRouter(prefix="/api/v1")
@@ -148,3 +148,20 @@ def get_forecast_7d(location: str = None):
         "lowest_day": result["lowest_day"],
         "projected_month_bill": bill,
     }
+
+
+@router.get("/monitor/retrain")
+def get_retrain_status():
+    try:
+        result = (
+            supabase.table("retrain_log")
+            .select("timestamp,old_model_r2,new_model_r2,model_replaced,rows_used")
+            .order("timestamp", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No retraining has run yet")
+    return result.data[0]

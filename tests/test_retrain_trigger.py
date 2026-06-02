@@ -327,3 +327,72 @@ def test_scheduler_calls_run_retraining_if_ready_after_drift_check():
         from src.services.scheduler import submit_smart_home_reading
         submit_smart_home_reading()
     mock_retrain.assert_called_once()
+
+
+# --- retrain status endpoint tests ---
+
+from fastapi.testclient import TestClient
+
+
+_RETRAIN_LOG_ROW = {
+    "timestamp": "2026-06-01T10:00:00+00:00",
+    "old_model_r2": 0.75,
+    "new_model_r2": 0.85,
+    "model_replaced": True,
+    "rows_used": 2500,
+}
+
+_RETRAIN_LOG_ROW_NOT_REPLACED = {**_RETRAIN_LOG_ROW, "model_replaced": False}
+
+
+def _client():
+    from src.api.main import app
+    return TestClient(app)
+
+
+def test_retrain_status_returns_200_with_correct_shape():
+    mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.order.return_value \
+        .limit.return_value.execute.return_value.data = [_RETRAIN_LOG_ROW]
+    with patch("src.api.routes.supabase", mock_db):
+        response = _client().get("/api/v1/monitor/retrain")
+    assert response.status_code == 200
+    body = response.json()
+    assert {"timestamp", "old_model_r2", "new_model_r2", "model_replaced", "rows_used"} \
+        .issubset(body.keys())
+
+
+def test_retrain_status_model_replaced_true_reflected_in_response():
+    mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.order.return_value \
+        .limit.return_value.execute.return_value.data = [_RETRAIN_LOG_ROW]
+    with patch("src.api.routes.supabase", mock_db):
+        response = _client().get("/api/v1/monitor/retrain")
+    assert response.json()["model_replaced"] is True
+
+
+def test_retrain_status_model_replaced_false_reflected_in_response():
+    mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.order.return_value \
+        .limit.return_value.execute.return_value.data = [_RETRAIN_LOG_ROW_NOT_REPLACED]
+    with patch("src.api.routes.supabase", mock_db):
+        response = _client().get("/api/v1/monitor/retrain")
+    assert response.json()["model_replaced"] is False
+
+
+def test_retrain_status_returns_404_when_no_rows():
+    mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.order.return_value \
+        .limit.return_value.execute.return_value.data = []
+    with patch("src.api.routes.supabase", mock_db):
+        response = _client().get("/api/v1/monitor/retrain")
+    assert response.status_code == 404
+
+
+def test_retrain_status_returns_500_on_supabase_error():
+    mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.order.return_value \
+        .limit.return_value.execute.side_effect = Exception("supabase unreachable")
+    with patch("src.api.routes.supabase", mock_db):
+        response = _client().get("/api/v1/monitor/retrain")
+    assert response.status_code == 500
