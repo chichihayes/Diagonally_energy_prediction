@@ -662,3 +662,33 @@ def test_predict_full_store_anomaly_called_with_correct_tier(client):
     assert "z_scores" in call_record
     assert "flagged_features" in call_record
     assert "input_features" in call_record
+
+
+def test_predict_simple_anomaly_sets_low_confidence_true(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_TRUE), \
+         patch("src.api.routes.store_anomaly") as mock_store, \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_SIMPLE), \
+         patch("src.api.routes.predict_simple", return_value=60.5), \
+         patch("src.api.routes.insert_prediction"):
+        resp = client.post(
+            "/api/v1/predict/simple",
+            json={"lights": 0, "T1": 20.0, "location": "Lagos"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["low_confidence"] is True
+    call_record = mock_store.call_args[0][0]
+    assert call_record["tier"] == "simple"
+    assert call_record["low_confidence_prediction"] is True
+
+
+def test_predict_simple_no_anomaly_does_not_call_store_anomaly(client):
+    with patch("src.api.routes.check_anomaly", return_value=ANOMALY_FALSE), \
+         patch("src.api.routes.store_anomaly") as mock_store, \
+         patch("src.api.routes.get_weather", return_value=MOCK_WEATHER_SIMPLE), \
+         patch("src.api.routes.predict_simple", return_value=60.5), \
+         patch("src.api.routes.insert_prediction"):
+        client.post(
+            "/api/v1/predict/simple",
+            json={"lights": 0, "T1": 20.0, "location": "Lagos"},
+        )
+    mock_store.assert_not_called()
