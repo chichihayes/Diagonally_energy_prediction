@@ -358,3 +358,93 @@ def test_forecast_7d_model_error_returns_500():
     with patch("src.api.routes.forecast_7d", side_effect=Exception("model crashed")):
         response = client.get("/api/v1/forecast/7d?location=Lagos")
     assert response.status_code == 500
+
+
+# ── GET /api/v1/models/leaderboard ───────────────────────────────────────────
+
+_LEADERBOARD = {
+    "regression": [
+        {"model": "RandomForest", "r2": 0.91, "winner": False},
+        {"model": "XGBoost",      "r2": 0.94, "winner": True},
+        {"model": "LightGBM",     "r2": 0.92, "winner": False},
+        {"model": "CatBoost",     "r2": 0.90, "winner": False},
+        {"model": "ExtraTrees",   "r2": 0.89, "winner": False},
+        {"model": "Ridge",        "r2": 0.78, "winner": False},
+    ],
+    "forecast": [
+        {"model": "Prophet",  "mape": 0.12, "winner": False},
+        {"model": "XGBoost",  "mape": 0.08, "winner": True},
+        {"model": "LightGBM", "mape": 0.10, "winner": False},
+        {"model": "LSTM",     "mape": 0.11, "winner": False},
+        {"model": "TFT",      "mape": 0.09, "winner": False},
+    ],
+}
+
+
+def test_get_leaderboard_returns_200_with_regression_and_forecast_keys(tmp_path):
+    import json
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    lb_file = tmp_path / "leaderboard.json"
+    lb_file.write_text(json.dumps(_LEADERBOARD))
+    model_path = tmp_path / "model_full.joblib"
+
+    client = TestClient(app)
+    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+        response = client.get("/api/v1/models/leaderboard")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "regression" in data
+    assert "forecast" in data
+
+
+def test_get_leaderboard_regression_has_exactly_one_winner(tmp_path):
+    import json
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    (tmp_path / "leaderboard.json").write_text(json.dumps(_LEADERBOARD))
+    model_path = tmp_path / "model_full.joblib"
+
+    client = TestClient(app)
+    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+        response = client.get("/api/v1/models/leaderboard")
+
+    data = response.json()
+    assert sum(1 for e in data["regression"] if e["winner"]) == 1
+
+
+def test_get_leaderboard_forecast_has_exactly_one_winner(tmp_path):
+    import json
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    (tmp_path / "leaderboard.json").write_text(json.dumps(_LEADERBOARD))
+    model_path = tmp_path / "model_full.joblib"
+
+    client = TestClient(app)
+    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+        response = client.get("/api/v1/models/leaderboard")
+
+    data = response.json()
+    assert sum(1 for e in data["forecast"] if e["winner"]) == 1
+
+
+def test_get_leaderboard_returns_503_when_leaderboard_file_absent(tmp_path):
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    model_path = tmp_path / "model_full.joblib"  # leaderboard.json intentionally not created
+
+    client = TestClient(app)
+    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+        response = client.get("/api/v1/models/leaderboard")
+
+    assert response.status_code == 503
+    assert "run training scripts" in response.json()["detail"].lower()
