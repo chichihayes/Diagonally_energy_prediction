@@ -1,13 +1,17 @@
 import logging
 import os
+from datetime import datetime, timezone
 
 from src.services.weather import get_weather
 from src.services.features import assemble_full_features
 from src.model.predict import predict_full
 from src.services.cost import wh_to_cost
-from src.services.database import insert_prediction
+from src.services.database import insert_prediction, get_last_n_clean_readings, store_drift_event
+from src.services.retrain_trigger import check_drift, run_retraining_if_ready
 
 logger = logging.getLogger(__name__)
+
+_clean_reading_count: int = 0
 
 
 def _read_sensors() -> tuple[int, dict]:
@@ -19,7 +23,15 @@ def _read_sensors() -> tuple[int, dict]:
     return lights, sensors
 
 
+def fetch_row_counts() -> tuple[int, int]:
+    from src.services.database import supabase as _db
+    clean = _db.table("predictions").select("id", count="exact").eq("low_confidence", False).execute().count or 0
+    total = _db.table("predictions").select("id", count="exact").execute().count or 0
+    return clean, total
+
+
 def submit_smart_home_reading() -> None:
+    global _clean_reading_count
     location = os.environ.get("SENSOR_LOCATION", "Lagos")
     lights, sensors = _read_sensors()
 
@@ -51,3 +63,25 @@ def submit_smart_home_reading() -> None:
     except Exception:
         logger.exception("Scheduler: Supabase insert failed — skipping tick")
         return
+
+    _clean_reading_count += 1
+
+    if _clean_reading_count >= 100:
+        try:
+            clean_rows = get_last_n_clean_readings(100)
+            drift_result = check_drift(clean_rows)
+            store_drift_event({
+                **drift_result,
+                "clean_row_count": 100,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            clean_count, total_count = fetch_row_counts()
+            run_retraining_if_ready(
+                drift_detected=drift_result["drift_detected"],
+                clean_row_count=clean_count,
+                total_row_count=total_count,
+            )
+        except Exception:
+            logger.exception("Scheduler: drift check/retrain failed")
+        finally:
+            _clean_reading_count = 0

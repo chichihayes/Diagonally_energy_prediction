@@ -32,3 +32,15 @@ def store_drift_event(record: dict) -> None:
 def get_latest_drift_event() -> dict | None:
     result = supabase.table("drift_log").select("*").order("timestamp", desc=True).limit(1).execute()
     return result.data[0] if result.data else None
+
+
+def get_last_n_clean_readings(n: int) -> list[dict]:
+    result = (
+        supabase.table("predictions")
+        .select("input_features")
+        .eq("low_confidence", False)
+        .order("created_at", desc=True)
+        .limit(n)
+        .execute()
+    )
+    return [row["input_features"] for row in result.data]
