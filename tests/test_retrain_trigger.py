@@ -204,3 +204,126 @@ def test_run_retraining_uses_uci_csv_when_supabase_empty():
         result = run_retraining()
     assert result["rows_used"] == 200
     assert result["new_r2"] == 0.75
+
+
+# --- run_retraining_if_ready tests ---
+
+import json as _json
+from unittest.mock import patch, MagicMock, mock_open
+
+
+_META_OLD = {"r2": 0.75}
+_META_HIGHER = {"best_model": MagicMock(), "new_r2": 0.85, "rows_used": 2500}
+_META_LOWER  = {"best_model": MagicMock(), "new_r2": 0.60, "rows_used": 2500}
+
+
+def test_run_retraining_if_ready_skips_when_should_retrain_false():
+    from src.services import retrain_trigger
+    with patch.object(retrain_trigger, "should_retrain", return_value=False), \
+         patch("scripts.run_retraining.run_retraining") as mock_run:
+        retrain_trigger.run_retraining_if_ready(
+            drift_detected=False, clean_row_count=100, total_row_count=110
+        )
+    mock_run.assert_not_called()
+
+
+def test_run_retraining_if_ready_replaces_model_when_new_r2_higher():
+    from src.services import retrain_trigger
+    mock_supabase = MagicMock()
+    with patch.object(retrain_trigger, "should_retrain", return_value=True), \
+         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
+         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch("joblib.dump") as mock_dump, \
+         patch("src.services.retrain_trigger.supabase", mock_supabase):
+        retrain_trigger.run_retraining_if_ready(
+            drift_detected=True, clean_row_count=2000, total_row_count=2200
+        )
+    mock_dump.assert_called_once()
+    insert_call = mock_supabase.table.return_value.insert.call_args[0][0]
+    assert insert_call["model_replaced"] is True
+
+
+def test_run_retraining_if_ready_keeps_model_when_new_r2_lower():
+    from src.services import retrain_trigger
+    mock_supabase = MagicMock()
+    with patch.object(retrain_trigger, "should_retrain", return_value=True), \
+         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
+         patch("scripts.run_retraining.run_retraining", return_value=_META_LOWER), \
+         patch("joblib.dump") as mock_dump, \
+         patch("src.services.retrain_trigger.supabase", mock_supabase):
+        retrain_trigger.run_retraining_if_ready(
+            drift_detected=True, clean_row_count=2000, total_row_count=2200
+        )
+    mock_dump.assert_not_called()
+    insert_call = mock_supabase.table.return_value.insert.call_args[0][0]
+    assert insert_call["model_replaced"] is False
+
+
+def test_run_retraining_if_ready_resets_drift_flag_after_retrain():
+    from src.services import retrain_trigger
+    retrain_trigger._drift_first_detected = "2026-05-01T00:00:00"
+    with patch.object(retrain_trigger, "should_retrain", return_value=True), \
+         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
+         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch("joblib.dump"), \
+         patch("src.services.retrain_trigger.supabase", MagicMock()):
+        retrain_trigger.run_retraining_if_ready(
+            drift_detected=True, clean_row_count=2000, total_row_count=2200
+        )
+    assert retrain_trigger._drift_first_detected is None
+
+
+def test_run_retraining_if_ready_inserts_retrain_log_row():
+    from src.services import retrain_trigger
+    mock_supabase = MagicMock()
+    with patch.object(retrain_trigger, "should_retrain", return_value=True), \
+         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
+         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch("joblib.dump"), \
+         patch("src.services.retrain_trigger.supabase", mock_supabase):
+        retrain_trigger.run_retraining_if_ready(
+            drift_detected=True, clean_row_count=2000, total_row_count=2200
+        )
+    inserted = mock_supabase.table.return_value.insert.call_args[0][0]
+    assert {"model_replaced", "old_model_r2", "new_model_r2", "rows_used"}.issubset(
+        inserted.keys()
+    )
+    mock_supabase.table.return_value.insert.return_value.execute.assert_called_once()
+
+
+def test_run_retraining_if_ready_calls_correct_table():
+    from src.services import retrain_trigger
+    mock_supabase = MagicMock()
+    with patch.object(retrain_trigger, "should_retrain", return_value=True), \
+         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
+         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch("joblib.dump"), \
+         patch("src.services.retrain_trigger.supabase", mock_supabase):
+        retrain_trigger.run_retraining_if_ready(
+            drift_detected=True, clean_row_count=2000, total_row_count=2200
+        )
+    mock_supabase.table.assert_called_with("retrain_log")
+
+
+def test_scheduler_calls_run_retraining_if_ready_after_drift_check():
+    import src.services.scheduler as sched
+    sched._clean_reading_count = 99
+    mock_clean_rows = [{"T1": 20.0, "lights": 0} for _ in range(100)]
+    drift_result = {"drift_detected": True, "drifted_features": ["T1"], "deviations": {"T1": 20.0}}
+    mock_supabase_client = MagicMock()
+    mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value.count = 2100
+    mock_supabase_client.table.return_value.select.return_value.execute.return_value.count = 2300
+
+    with patch("src.services.scheduler.get_weather", return_value={"T_out": 28.4, "Press_mm_hg": 1012.0, "RH_out": 82.0, "Windspeed": 3.1, "Visibility": 10.0, "Tdewpoint": 25.1}), \
+         patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+         patch("src.services.scheduler.insert_prediction"), \
+         patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}), \
+         patch("src.services.scheduler.get_last_n_clean_readings", return_value=mock_clean_rows), \
+         patch("src.services.scheduler.check_drift", return_value=drift_result), \
+         patch("src.services.scheduler.store_drift_event"), \
+         patch("src.services.scheduler.fetch_row_counts", return_value=(2100, 2300)), \
+         patch("src.services.scheduler.run_retraining_if_ready") as mock_retrain:
+        from src.services.scheduler import submit_smart_home_reading
+        submit_smart_home_reading()
+    mock_retrain.assert_called_once()

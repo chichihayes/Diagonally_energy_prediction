@@ -7,12 +7,7 @@ from src.services.features import assemble_full_features
 from src.model.predict import predict_full
 from src.services.cost import wh_to_cost
 from src.services.database import insert_prediction, get_last_n_clean_readings, store_drift_event
-
-try:
-    from src.services.retrain_trigger import check_drift
-except Exception:
-    def check_drift(clean_readings: list) -> dict:  # type: ignore[misc]
-        return {"drift_detected": False, "drifted_features": [], "deviations": {}}
+from src.services.retrain_trigger import check_drift, run_retraining_if_ready
 
 try:
     from src.services.monitor import check_anomaly as monitor_reading
@@ -32,6 +27,13 @@ def _read_sensors() -> tuple[int, dict]:
         sensors[f"T{i}"] = float(os.environ.get(f"SENSOR_T{i}", "20.0"))
         sensors[f"RH_{i}"] = float(os.environ.get(f"SENSOR_RH_{i}", "50.0"))
     return lights, sensors
+
+
+def fetch_row_counts() -> tuple[int, int]:
+    from src.services.database import supabase as _db
+    clean = _db.table("predictions").select("id", count="exact").eq("low_confidence", False).execute().count or 0
+    total = _db.table("predictions").select("id", count="exact").execute().count or 0
+    return clean, total
 
 
 def submit_smart_home_reading() -> None:
@@ -86,7 +88,13 @@ def submit_smart_home_reading() -> None:
                 "clean_row_count": 100,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
+            clean_count, total_count = fetch_row_counts()
+            run_retraining_if_ready(
+                drift_detected=drift_result["drift_detected"],
+                clean_row_count=clean_count,
+                total_row_count=total_count,
+            )
         except Exception:
-            logger.exception("Scheduler: drift check failed")
+            logger.exception("Scheduler: drift check/retrain failed")
         finally:
             _clean_reading_count = 0

@@ -164,6 +164,20 @@ Trained on a reduced feature set for homeowners with no room sensors.
 
 ---
 
+## Supabase — retrain_log table
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | Primary key, default gen_random_uuid() |
+| timestamp | timestamptz | default now() |
+| trigger_reason | text | Human-readable summary of why triggered |
+| old_model_r2 | float8 | R² of model before retraining |
+| new_model_r2 | float8 | R² of best model from this run |
+| model_replaced | boolean | True if new file written |
+| rows_used | int4 | Total rows (UCI + clean Supabase) used |
+
+---
+
 ## Model Leaderboard Schema
 | Field | Type | Description |
 |---|---|---|
