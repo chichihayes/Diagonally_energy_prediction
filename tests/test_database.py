@@ -192,3 +192,29 @@ def test_get_latest_drift_event_returns_none_when_empty():
     with patch("src.services.database.supabase", mock_client):
         result = get_latest_drift_event()
     assert result is None
+
+
+def test_store_anomaly_calls_supabase_insert():
+    from unittest.mock import MagicMock, patch
+    from src.services.database import store_anomaly
+
+    record = {
+        "timestamp": "2026-06-01T10:00:00Z",
+        "tier": "full",
+        "input_features": {"T1": 999.0, "lights": 0},
+        "z_scores": {"T1": 30.1},
+        "flagged_features": ["T1"],
+        "low_confidence_prediction": True,
+    }
+
+    mock_execute = MagicMock()
+    mock_insert = MagicMock(return_value=MagicMock(execute=mock_execute))
+    mock_table = MagicMock(return_value=MagicMock(insert=mock_insert))
+
+    with patch("src.services.database.supabase") as mock_client:
+        mock_client.table = mock_table
+        store_anomaly(record)
+
+    mock_table.assert_called_once_with("anomalies")
+    mock_insert.assert_called_once_with(record)
+    mock_execute.assert_called_once()

@@ -32,3 +32,7 @@ def store_drift_event(record: dict) -> None:
 def get_latest_drift_event() -> dict | None:
     result = supabase.table("drift_log").select("*").order("timestamp", desc=True).limit(1).execute()
     return result.data[0] if result.data else None
+
+
+def store_anomaly(record: dict) -> None:
+    supabase.table("anomalies").insert(record).execute()

@@ -150,6 +150,20 @@ Trained on a reduced feature set for homeowners with no room sensors.
 
 ---
 
+## Supabase — anomalies table
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | Primary key, auto-generated |
+| timestamp | timestamptz | Time the reading was flagged |
+| tier | text | `'full'` or `'simple'` |
+| input_features | jsonb | All feature values submitted to the model |
+| z_scores | jsonb | Z-Score per feature (only features with std > 0) |
+| flagged_features | text[] | Feature names where abs(Z) > 3 |
+| low_confidence_prediction | bool | Always true for rows in this table |
+
+---
+
 ## Model Leaderboard Schema
 | Field | Type | Description |
 |---|---|---|
