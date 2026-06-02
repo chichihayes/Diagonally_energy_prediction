@@ -19,3 +19,12 @@ def get_predictions(tier: str | None = None, limit: int = 10, since: str | None 
     if tier is not None:
         query = query.eq("tier", tier)
     return query.limit(limit).execute().data
+
+
+def store_drift_event(record: dict) -> None:
+    supabase.table("drift_log").insert(record).execute()
+
+
+def get_latest_drift_event() -> dict | None:
+    result = supabase.table("drift_log").select("*").order("timestamp", desc=True).limit(1).execute()
+    return result.data[0] if result.data else None
