@@ -12,6 +12,10 @@ def insert_prediction(row: dict) -> None:
     supabase.table("predictions").insert(row).execute()
 
 
+def fetch_clean_rows() -> list[dict]:
+    return supabase.table("predictions").select("*").execute().data
+
+
 def get_predictions(tier: str | None = None, limit: int = 10, since: str | None = None) -> list[dict]:
     query = supabase.table("predictions").select("*").order("created_at", desc=True)
     if since is not None:

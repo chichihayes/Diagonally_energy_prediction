@@ -105,3 +105,102 @@ def test_should_retrain_c2_c3_both_false_returns_false():
 
 def test_should_retrain_all_conditions_false_returns_false():
     assert should_retrain(False, 1000, 3000) is False
+
+
+# --- run_retraining tests ---
+
+import pandas as pd
+from unittest.mock import patch, MagicMock
+
+_UCI_COLUMNS = [
+    "date", "Appliances", "lights",
+    "T1", "RH_1", "T2", "RH_2", "T3", "RH_3", "T4", "RH_4",
+    "T5", "RH_5", "T6", "RH_6", "T7", "RH_7", "T8", "RH_8",
+    "T9", "RH_9", "T_out", "Press_mm_hg", "RH_out",
+    "Windspeed", "Visibility", "Tdewpoint", "rv1", "rv2",
+]
+
+
+def _make_uci_df(n=500):
+    import numpy as np
+    rng = np.random.default_rng(42)
+    df = pd.DataFrame(rng.random((n, len(_UCI_COLUMNS))), columns=_UCI_COLUMNS)
+    df["date"] = pd.date_range("2016-01-01", periods=n, freq="10min")
+    return df
+
+
+def test_run_retraining_returns_best_model_and_r2():
+    from scripts.run_retraining import run_retraining
+    with patch("scripts.run_retraining.load_uci_csv", return_value=_make_uci_df()), \
+         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.train_all_models") as mock_train:
+        mock_train.return_value = (MagicMock(), 0.85)
+        result = run_retraining()
+    assert set(result.keys()) == {"best_model", "new_r2", "rows_used"}
+    assert isinstance(result["new_r2"], float)
+    assert -1.0 <= result["new_r2"] <= 1.0
+
+
+def test_run_retraining_drops_rv1_rv2():
+    from scripts.run_retraining import run_retraining
+    captured = {}
+
+    def capture_train(X_train, y_train, X_test, y_test):
+        captured["columns"] = list(X_train.columns)
+        return (MagicMock(), 0.80)
+
+    with patch("scripts.run_retraining.load_uci_csv", return_value=_make_uci_df()), \
+         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.train_all_models", side_effect=capture_train):
+        run_retraining()
+    assert "rv1" not in captured["columns"]
+    assert "rv2" not in captured["columns"]
+
+
+def test_run_retraining_uses_time_ordered_split():
+    from scripts.run_retraining import run_retraining
+    captured = {}
+
+    def capture_train(X_train, y_train, X_test, y_test):
+        captured["n_train"] = len(X_train)
+        captured["n_test"] = len(X_test)
+        return (MagicMock(), 0.80)
+
+    df = _make_uci_df(n=500)
+    with patch("scripts.run_retraining.load_uci_csv", return_value=df), \
+         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.train_all_models", side_effect=capture_train):
+        run_retraining()
+    assert captured["n_train"] == 400
+    assert captured["n_test"] == 100
+
+
+def test_run_retraining_excludes_low_confidence_rows():
+    from scripts.run_retraining import run_retraining
+    captured = {}
+
+    def capture_train(X_train, y_train, X_test, y_test):
+        captured["total_rows"] = len(X_train) + len(X_test)
+        return (MagicMock(), 0.80)
+
+    supabase_rows = [
+        {"low_confidence": False, "input_features": {"lights": 10, "T1": 19.0}},
+        {"low_confidence": True,  "input_features": {"lights": 50, "T1": 30.0}},
+        {"low_confidence": False, "input_features": {"lights": 5,  "T1": 18.0}},
+    ]
+    with patch("scripts.run_retraining.load_uci_csv", return_value=_make_uci_df(n=100)), \
+         patch("scripts.run_retraining.fetch_clean_rows", return_value=supabase_rows), \
+         patch("scripts.run_retraining.train_all_models", side_effect=capture_train):
+        result = run_retraining()
+    assert result["rows_used"] == 102
+
+
+def test_run_retraining_uses_uci_csv_when_supabase_empty():
+    from scripts.run_retraining import run_retraining
+    with patch("scripts.run_retraining.load_uci_csv", return_value=_make_uci_df(n=200)), \
+         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.train_all_models") as mock_train:
+        mock_train.return_value = (MagicMock(), 0.75)
+        result = run_retraining()
+    assert result["rows_used"] == 200
+    assert result["new_r2"] == 0.75
