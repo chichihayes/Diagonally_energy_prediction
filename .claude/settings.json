@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del \"c:\\\\Users\\\\HP\\\\Desktop\\\\programming\\\\Diagonally_energy_prediction\\\\frontend\\\\simple.html\")",
+      "Bash(Remove-Item \"c:\\\\Users\\\\HP\\\\Desktop\\\\programming\\\\Diagonally_energy_prediction\\\\src\\\\services\\\\weather.py\" -Force)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\HP\\\\Desktop\\\\programming\\\\Diagonally_energy_prediction\\\\tests\\\\test_weather.py\" -Force)",
+      "Bash(Write-Output \"done\")",
+      "Read(//mnt/user-data/outputs/**)",
+      "Bash(python -m pytest tests/ -x --tb=short -q)",
+      "Bash(python -m pytest tests/ --tb=line -q)",
+      "Bash(python -m pytest tests/ --tb=short -q)",
+      "Bash(git rm *)",
+      "Bash(Get-ChildItem -Path \"src\" -Recurse -File)",
+      "Bash(Select-Object FullName, LastWriteTime)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(xargs ls -la)",
+      "Bash(python -m pytest tests/ --tb=no -q)",
+      "Bash(python -m pytest tests/test_monitor.py tests/test_scheduler.py -v)",
+      "Bash(Remove-Item -Path \"src\\\\model\\\\train_full.py\",\"src\\\\model\\\\train_simple.py\",\"src\\\\model\\\\predict.py\",\"scripts\\\\run_training_full.py\",\"scripts\\\\run_training_simple.py\" -Force)",
+      "Bash(ls issues/done/)",
+      "Bash(ls issues/open/)",
+      "Bash(python -m pytest tests/test_forecast.py tests/test_api.py -v)"
+    ]
+  }
+}

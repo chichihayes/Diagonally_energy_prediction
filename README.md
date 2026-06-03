@@ -1,38 +1,109 @@
-﻿# Diagonally Energy Prediction
+# Diagonally Energy Prediction
 
-ML system for real-time electricity consumption prediction via REST API.
+ML system that predicts household appliance energy consumption for a UK home using the
+[REFIT Smart Home Dataset](https://pureportal.strath.ac.uk/en/datasets/refit-electrical-load-measurements-cleaned)
+(House 1, Oct 2013 – Jan 2014).
+
+## What it does
+
+- Trains three time series forecast models (Chronos-Bolt Small, MSTL, XGBoost with lag features)
+  on 9-appliance aggregate consumption data and selects the best by MAPE
+- Runs an APScheduler background job every 15 minutes replaying the held-out test split
+  (Dec 16 – Jan 2 2014), storing per-appliance actuals and estimated GBP cost in Supabase
+- Serves a REST API for 24-hour and 7-day forecasts, prediction history, model leaderboard,
+  drift status, and retraining status
+- Flags anomalous readings (Z-Score > 3 on any of 13 features) and marks predictions
+  as `low_confidence`
+- Detects drift every 100 clean readings and triggers automatic retraining when 3 conditions
+  are all met: drift detected, ≥ 2000 clean rows, anomaly rate < 10%
+- Serves a pure HTML + JavaScript frontend (no build step) with live dashboard,
+  7-day forecast chart, and monthly bill projection in GBP (£)
 
 ## Stack
-- Model: scikit-learn (Random Forest / XGBoost)
-- API: FastAPI
-- Dataset: UCI Appliances Energy Prediction (19,735 rows, 28 features)
+
+| Layer | Tech |
+|---|---|
+| Language | Python 3.11 |
+| API | FastAPI + Uvicorn |
+| Models | Chronos-Bolt (Small), MSTL, XGBoost with lag features |
+| Data | pandas, numpy, scikit-learn |
+| Model persistence | joblib |
+| Dataset | REFIT Smart Home Dataset — House 1 |
+| Frontend | HTML + JavaScript + Tailwind CSS (CDN) |
+| Database | Supabase (Postgres) |
+| Scheduler | APScheduler |
+| Tests | pytest + httpx |
+| CI | GitHub Actions |
 
 ## Setup
+
 ```bash
 python -m venv venv
 venv\Scripts\activate       # Windows
+# source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
-cp .env.example .env
+cp .env.example .env        # fill in SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 ```
 
-## Train the model
+Place the REFIT House1.csv dataset at `data/raw/House1.csv` before training.
+
+## Train the forecast model
+
 ```bash
-python scripts/run_training.py
+python scripts/run_training_forecast.py
 ```
+
+This trains all three models, evaluates MAPE on the held-out test split (Dec 16 – Jan 2),
+saves the best model to `src/model/trained/model_forecast.joblib`, and writes
+`src/model/trained/forecast_leaderboard.json`.
 
 ## Run the API
+
 ```bash
 uvicorn src.api.main:app --reload
 ```
 
-## Test
+The scheduler starts automatically and begins replaying test split rows every 15 minutes.
+
+## Run tests
+
 ```bash
 pytest tests/
 ```
 
-## Predict (example)
-```bash
-curl -X POST http://localhost:8000/api/v1/predict \
-  -H "Content-Type: application/json" \
-  -d '{"lights":0,"T1":19.89,"RH_1":47.6,"T2":19.2,"RH_2":44.79,"T3":19.79,"RH_3":44.73,"T_out":6.6,"Windspeed":7.0,"Visibility":63.0,"Tdewpoint":5.3}'
+## API routes
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/v1/predictions` | Stored prediction history (filterable by tier, limit, since) |
+| GET | `/api/v1/forecast/24h` | Hourly consumption forecast for the next 24 hours |
+| GET | `/api/v1/forecast/7d` | Daily forecast for next 7 days + weekly bill projection |
+| GET | `/api/v1/models/leaderboard` | MAPE/MAE/RMSE scores for all 3 trained models |
+| GET | `/api/v1/monitor/drift` | Latest drift check result |
+| GET | `/api/v1/monitor/retrain` | Latest retraining outcome |
+| GET | `/health` | Health check |
+
+## Environment variables
+
+See [`docs/env.md`](docs/env.md) for the full reference.
+
 ```
+MODEL_PATH_FORECAST=src/model/trained/model_forecast.joblib
+TEST_SPLIT_PATH=data/processed/test.csv
+API_HOST=0.0.0.0
+API_PORT=8000
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+ELECTRICITY_TARIFF_GBP_PER_KWH=0.34
+```
+
+## Docs
+
+| File | Contents |
+|---|---|
+| [`docs/schema.md`](docs/schema.md) | Dataset schema, Supabase table definitions |
+| [`docs/api-contracts.md`](docs/api-contracts.md) | Every route, request shape, response shape |
+| [`docs/architecture.md`](docs/architecture.md) | File structure, data flow, service boundaries |
+| [`docs/decisions.md`](docs/decisions.md) | Architectural decision records |
+| [`docs/env.md`](docs/env.md) | Environment variables reference |

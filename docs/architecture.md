@@ -5,8 +5,8 @@
 ```
 diagonally-energy-prediction/
 ├── data/
-│   ├── raw/                              # KAG_energydata_complete.csv (gitignored)
-│   └── processed/                        # engineered features + lag features
+│   ├── raw/                              # House1.csv (REFIT Smart Home Dataset, gitignored)
+│   └── processed/                        # train.csv, test.csv, engineered features + lag features
 ├── frontend/
 │   ├── index.html                        # landing page with tier selection
 │   ├── simple.html                       # Basic tier form and results
@@ -17,37 +17,38 @@ diagonally-energy-prediction/
 │       └── app.js                        # API calls and UI logic
 ├── src/
 │   ├── api/
-│   │   ├── main.py                       # FastAPI app init, APScheduler startup
-│   │   └── routes.py                     # all route handlers
+│   │   ├── main.py                       # FastAPI app entry point + APScheduler startup
+│   │   └── routes.py                     # all prediction, forecast, and monitor endpoints
 │   ├── model/
-│   │   ├── train_full.py                 # train all 6 regression models on 25 features
-│   │   ├── train_simple.py               # train all 6 regression models on 7 features
-│   │   ├── train_forecast.py             # train all 5 time series models
-│   │   ├── evaluate.py                   # compare models, return best by metric
-│   │   ├── predict.py                    # regression model singletons + inference
+│   │   ├── train_forecast.py             # train Chronos-Bolt, MSTL, XGBoost — save best MAPE
+│   │   ├── evaluate.py                   # write_leaderboard helper
 │   │   ├── forecast.py                   # forecast model singleton + inference
-│   │   └── trained/                      # model_full.joblib, model_simple.joblib,
-│   │                                     # model_forecast.joblib (gitignored)
+│   │   └── trained/
+│   │       ├── model_forecast.joblib     # best time series model (gitignored)
+│   │       ├── forecast_leaderboard.json # MAPE scores for all 3 trained models
+│   │       └── training_stats.json       # per-feature mean + std from train split (for Z-Score)
 │   └── services/
-│       ├── features.py                   # assemble feature dicts + lag features
-│       ├── data_loader.py                # load CSV, drop rv1/rv2/date, split train/test
-│       ├── weather.py                    # OpenWeatherMap client, 10-min in-memory cache
-│       ├── cost.py                       # Wh→kWh, NGN cost, monthly bill projection
+│       ├── features.py                   # build_lag_matrix for forecast training
+│       ├── data_loader.py                # load and preprocess House1.csv, split train/test
+│       ├── cost.py                       # Wh → kWh → GBP, monthly bill projection
 │       ├── database.py                   # Supabase insert and retrieve helpers
-│       └── scheduler.py                  # APScheduler — fires every 15 min
+│       ├── scheduler.py                  # APScheduler — replays test split rows every 15 min
+│       ├── monitor.py                    # Z-Score anomaly detection on every incoming reading
+│       └── retrain_trigger.py            # drift check + retraining conditions every 100 readings
 ├── scripts/
-│   ├── run_training_full.py              # offline entrypoint for full regression training
-│   ├── run_training_simple.py            # offline entrypoint for simple regression training
-│   └── run_training_forecast.py          # offline entrypoint for time series training
+│   ├── run_training_forecast.py          # offline entrypoint — train all 3 models, save best
+│   └── run_retraining.py                 # retraining entrypoint — fetches clean rows, retrains
 ├── tests/
 │   ├── test_api.py
 │   ├── test_features.py
 │   ├── test_model.py
 │   ├── test_forecast.py
 │   ├── test_evaluate.py
-│   ├── test_weather.py
 │   ├── test_cost.py
-│   └── test_database.py
+│   ├── test_database.py
+│   ├── test_monitor.py
+│   ├── test_retrain_trigger.py
+│   └── test_scheduler.py
 ├── notebooks/
 └── .github/workflows/ci.yml
 ```
@@ -57,73 +58,54 @@ diagonally-energy-prediction/
 ## Data Flow — Training (offline)
 
 ```
-data/raw/KAG_energydata_complete.csv
+data/raw/House1.csv  (REFIT Smart Home Dataset, House 1, Oct–Jan 2014)
     ↓
-data_loader.py          # load CSV, drop date/rv1/rv2, split 80/20 time-ordered
+data_loader.py          # load CSV, drop unused columns, split 80/20 time-ordered
+                        # → data/processed/train.csv, test.csv
     ↓
-features.py             # produce full matrix (25 cols), simple matrix (7 cols),
-                        # and lag feature matrix (lag_1h, lag_24h, lag_168h,
-                        # rolling_mean_3h, rolling_mean_24h)
+features.py             # build_lag_matrix: lag_1h, lag_24h, lag_168h,
+                        # rolling_mean_3h, rolling_mean_24h on aggregate_wh
     ↓
-train_full.py           # fit RF, XGBoost, LightGBM, CatBoost, ExtraTrees, Ridge
-                        # evaluate R² on test split → save best as model_full.joblib
-train_simple.py         # same 6 models on 7-feature set
-                        # evaluate R² → save best as model_simple.joblib
-train_forecast.py       # fit Prophet, XGBoost+lags, LightGBM+lags, LSTM, TFT
-                        # evaluate MAPE → save best as model_forecast.joblib
+train_forecast.py       # fit Chronos-Bolt (Small), MSTL, XGBoost+lags
+                        # evaluate MAPE on test split
+                        # save best MAPE model → model_forecast.joblib
+                        # save all scores → forecast_leaderboard.json
+                        # save per-feature mean+std → training_stats.json
     ↓
-evaluate.py             # compare all models, print leaderboard
+evaluate.py             # write_leaderboard — compares models, marks winner
 ```
 
 ---
 
-## Data Flow — Smart Home Tier (runtime)
+## Data Flow — Scheduler tick (every 15 min, runtime)
 
 ```
-APScheduler (every 15 min)
+APScheduler fires every 15 min
     ↓
-POST /api/v1/predict/full  (lights, T1-T9, RH_1-RH_9, location)
+scheduler.py            # read next row from data/processed/test.csv (Dec 16–Jan 2 2014)
+                        # predicted_wh = row["aggregate_wh"]  (no model inference on tick)
     ↓
-weather.py              # fetch T_out, Press_mm_hg, RH_out, Windspeed, Visibility,
-                        # Tdewpoint from OpenWeatherMap (cached 10 min)
+cost.py                 # wh_to_cost: Wh → kWh × ELECTRICITY_TARIFF_GBP_PER_KWH → GBP
     ↓
-features.py             # assemble 25-feature dict
+monitor.py              # check_anomaly: Z-Score across all MODEL_FEATURES
+                        # Z > 3 on any feature → is_anomaly = True, low_confidence = True
     ↓
-predict.py              # model_full singleton → predicted_wh
+database.py             # if anomaly: store_anomaly → Supabase anomalies table
+                        # insert_prediction → Supabase predictions table
+                        #   (tier, predicted_wh, predicted_kwh, estimated_cost_gbp,
+                        #    per-appliance Wh columns, low_confidence, aggregate_wh)
     ↓
-cost.py                 # Wh→kWh, kWh × ELECTRICITY_TARIFF_NGN_PER_KWH → NGN
-    ↓
-database.py             # insert row into Supabase predictions table
-    ↓
-JSON response           # { predicted_wh, predicted_kwh, estimated_cost_ngn }
-    ↓
-dashboard.html          # polls or refreshes every 15 min
-```
-
----
-
-## Data Flow — Basic Tier (runtime)
-
-```
-Homeowner submits form  (lights, T1, location)
-    ↓
-POST /api/v1/predict/simple
-    ↓
-weather.py              # fetch T_out, RH_out, Windspeed, Visibility, Tdewpoint
-                        # from OpenWeatherMap (cached 10 min)
-    ↓
-features.py             # assemble 7-feature dict
-    ↓
-predict.py              # model_simple singleton → predicted_wh
-    ↓
-cost.py                 # Wh→kWh, kWh × tariff → NGN
-    ↓
-database.py             # insert row into Supabase predictions table
-    ↓
-JSON response           # { predicted_wh, predicted_kwh, estimated_cost_ngn,
-                        #   weather_factors }
-    ↓
-simple.html             # display result + prediction history
+                        # every 100 clean (non-anomalous) readings:
+retrain_trigger.py      # check_drift: rolling mean vs training mean for each feature
+                        # deviation > 15% on any feature → drift_detected = True
+database.py             # store_drift_event → Supabase drift_log table
+retrain_trigger.py      # run_retraining_if_ready:
+                        #   condition 1: drift_detected = True
+                        #   condition 2: clean_row_count >= 2000
+                        #   condition 3: anomaly_rate < 10%
+                        # if all 3 met: retrain all 3 models via run_retraining.py
+                        #   new MAPE < old MAPE → replace model_forecast.joblib
+                        #   log result → Supabase retrain_log table
 ```
 
 ---
@@ -131,21 +113,55 @@ simple.html             # display result + prediction history
 ## Data Flow — Forecast (runtime)
 
 ```
-GET /api/v1/forecast/24h  or  GET /api/v1/forecast/7d  (?location=Lagos)
+GET /api/v1/forecast/24h   or   GET /api/v1/forecast/7d
     ↓
-weather.py              # fetch current outside conditions (cached 10 min)
+forecast.py             # model_forecast singleton (loaded once at startup)
+                        # returns yhat, yhat_lower, yhat_upper per hour (24h) or day (7d)
     ↓
-forecast.py             # model_forecast singleton → yhat, yhat_lower, yhat_upper
-                        # for each hour (24h) or each day (7d)
-    ↓
-cost.py                 # convert each yhat to NGN cost
-                        # sum forecast kWh → projected monthly bill
-                        # return optimistic / most_likely / pessimistic NGN
+cost.py                 # convert each yhat to GBP cost
+                        # 7d: sum forecast kWh → projected_week_bill
+                        # return optimistic (yhat_lower) / most_likely (yhat) / pessimistic (yhat_upper)
     ↓
 JSON response           # { forecast[], peak_hour/day, lowest_hour/day,
-                        #   projected_month_bill }
+                        #   projected_week_bill (7d only) }
     ↓
 forecast.html           # 7-day chart, peak days, bill range
+```
+
+---
+
+## Data Flow — Monitor endpoints (runtime)
+
+```
+GET /api/v1/monitor/drift
+    ↓
+database.py             # get_latest_drift_event → Supabase drift_log table
+    ↓
+JSON response           # { drift_detected, drifted_features, deviations, timestamp }
+
+GET /api/v1/monitor/retrain
+    ↓
+database.py             # latest row from Supabase retrain_log table
+    ↓
+JSON response           # { timestamp, old_mape, new_mape, model_replaced, rows_used }
+```
+
+---
+
+## Data Flow — Predictions history (runtime)
+
+```
+GET /api/v1/predictions  (?tier=, &limit=, &since=)
+    ↓
+database.py             # get_predictions → Supabase predictions table
+    ↓
+JSON response           # list of stored prediction rows
+
+GET /api/v1/models/leaderboard
+    ↓
+routes.py               # read src/model/trained/forecast_leaderboard.json from disk
+    ↓
+JSON response           # { forecast: [ { model, mape, mae, rmse, winner } ] }
 ```
 
 ---
@@ -155,22 +171,25 @@ forecast.html           # 7-day chart, peak days, bill range
 | Layer | Responsibility | Must not |
 |---|---|---|
 | `routes.py` | Validate input, call services, return HTTP response | Contain business logic or ML calls |
-| `features.py` | Assemble feature dicts from raw inputs + weather, build lag features | Fetch weather or call the model |
-| `weather.py` | Fetch and cache OpenWeatherMap data | Know anything about the model or DB |
-| `predict.py` | Load regression models once at startup, run inference | Reload model per request, touch DB |
+| `features.py` | Build lag feature matrix from aggregate_wh time series | Call the model or touch DB |
+| `data_loader.py` | Load and preprocess House1.csv, expose MODEL_FEATURES and APPLIANCE_COLS | Know anything about models |
 | `forecast.py` | Load forecast model once at startup, run inference | Reload model per request, touch DB |
-| `cost.py` | Convert Wh→kWh→NGN, calculate bill projection | Know anything about models or weather |
-| `database.py` | Insert and retrieve prediction/forecast rows from Supabase | Know anything about models or weather |
-| `evaluate.py` | Compare model scores, return winner — offline only | Run inside the API process |
-| `train_*.py` | Train, evaluate, and save models — offline only | Run inside the API process |
+| `cost.py` | Convert Wh → kWh → GBP, calculate bill projection | Know anything about models or weather |
+| `database.py` | Insert and retrieve all Supabase table rows | Know anything about models or features |
+| `monitor.py` | Z-Score anomaly check per reading using training_stats.json | Touch DB or run the model |
+| `retrain_trigger.py` | Drift check + retraining gate (3 conditions) + trigger run_retraining.py | Run inside a request; must only be called from scheduler |
+| `scheduler.py` | Replay test split rows every 15 min, orchestrate monitor → DB → drift → retrain | Run inference; predicted_wh comes from aggregate_wh column directly |
+| `evaluate.py` | Compare model scores, write leaderboard — offline only | Run inside the API process |
+| `train_forecast.py` | Train all 3 time series models, save best — offline only | Run inside the API process |
 
 ---
 
 ## Key Constraints
 
-- All three model files are loaded once at startup as module-level singletons — never reloaded per request.
-- Feature column names in `features.py` must match exactly between training and inference.
-- Weather responses are cached in memory for 10 minutes to keep predictions under 2 seconds.
+- `model_forecast.joblib` is loaded once at startup as a module-level singleton in `forecast.py` — never reloaded per request.
+- `training_stats.json` is loaded once at import time in `retrain_trigger.py` — provides fixed training mean/std for drift and Z-Score checks.
 - APScheduler runs inside the FastAPI process, started in the `main.py` lifespan event.
-- Training is always run offline via `scripts/` — never triggered from within the API.
-- `ELECTRICITY_TARIFF_NGN_PER_KWH` must always be read from the environment — never hardcoded.
+- Training is always run offline via `scripts/` — never triggered from within the API directly.
+- Anomalous readings are stored in Supabase but never counted toward the clean row pool or used for retraining.
+- `ELECTRICITY_TARIFF_GBP_PER_KWH` must always be read from the environment — never hardcoded.
+- Drift check runs every 100 clean readings (in-process counter in `scheduler.py`); retraining gate checks Supabase row counts for the 2000-row threshold.

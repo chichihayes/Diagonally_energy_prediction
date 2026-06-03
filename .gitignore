@@ -12,3 +12,5 @@ src/model/trained/
 *.joblib
 *.pkl
 .ipynb_checkpoints/
+catboost_info/
+.claude/worktrees/

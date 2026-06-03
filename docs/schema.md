@@ -184,10 +184,10 @@ Scaler saved as `src/model/trained/scaler.joblib`.
 | id | uuid | Primary key |
 | timestamp | timestamptz | — |
 | trigger_reason | text | — |
-| old_model_r2 | float8 | — |
-| new_model_r2 | float8 | — |
-| model_replaced | boolean | — |
-| rows_used | int4 | — |
+| old_mape | float8 | MAPE of the model before retraining |
+| new_mape | float8 | MAPE of the newly trained model |
+| model_replaced | boolean | True if new MAPE < old MAPE |
+| rows_used | int4 | Number of clean rows used for retraining |
 
 ---
 

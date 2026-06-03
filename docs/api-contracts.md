@@ -104,15 +104,11 @@ Returns daily consumption forecast for the next 7 days with weekly bill projecti
 
 ## GET /api/v1/models/leaderboard
 
-Returns R² scores for all regression models and MAPE/MAE/RMSE scores for all forecast models.
+Returns MAPE/MAE/RMSE scores for all three time series forecast models trained against the REFIT test split.
 
 **Response — 200:**
 ```json
 {
-  "regression": [
-    { "model": "RandomForest", "r2": 0.87, "winner": false },
-    { "model": "XGBoost", "r2": 0.91, "winner": true }
-  ],
   "forecast": [
     { "model": "Chronos", "mae": 45.2, "rmse": 60.1, "mape": 8.5, "winner": true },
     { "model": "MSTL",    "mae": 55.0, "rmse": 72.0, "mape": 9.8, "winner": false },
@@ -168,8 +164,8 @@ Returns the most recent retraining outcome.
 ```json
 {
   "timestamp": "2013-12-16T10:00:00+00:00",
-  "old_model_r2": 0.75,
-  "new_model_r2": 0.85,
+  "old_mape": 9.8,
+  "new_mape": 7.4,
   "model_replaced": true,
   "rows_used": 2500
 }
