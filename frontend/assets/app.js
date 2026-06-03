@@ -507,7 +507,7 @@ if (document.getElementById('forecast-form')) {
       render7dChart(data7d, 'chart-7d');
       document.getElementById('section-7d').classList.remove('hidden');
 
-      renderBillCard(data7d.projected_month_bill);
+      renderBillCard(data7d.projected_week_bill);
       document.getElementById('section-bill').classList.remove('hidden');
     } catch (err) {
       errorEl.textContent = err.message;

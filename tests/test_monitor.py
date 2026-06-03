@@ -54,6 +54,14 @@ def test_check_anomaly_ignores_unknown_features():
     assert result["is_anomaly"] is False
 
 
+def test_check_anomaly_raises_if_stats_missing(tmp_path, monkeypatch):
+    import src.services.monitor as monitor_mod
+    monkeypatch.setattr(monitor_mod, "_STATS_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setattr(monitor_mod, "_training_stats", None)
+    with pytest.raises(FileNotFoundError):
+        monitor_mod.check_anomaly({"lag_1": 500.0})
+
+
 def test_training_stats_json_has_correct_structure():
     stats_path = "src/model/trained/training_stats.json"
     if not os.path.exists(stats_path):

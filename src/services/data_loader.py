@@ -1,10 +1,8 @@
 import json
 import os
 
-import joblib
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 
 _CSV_PATH = "data/raw/House1.csv"
 _TRAIN_END = "2013-12-15"
@@ -95,12 +93,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_and_split() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Load House1.csv, run full preprocessing, chronological split, save artifacts.
-
-    Returns (train_scaled, test_scaled) where MODEL_FEATURES are StandardScaler-transformed.
-    Unscaled CSVs and training_stats.json are saved for drift detection.
-    """
+    """Load House1.csv, run full preprocessing, chronological split, save artifacts."""
     raw = load_house1_csv()
     df = preprocess(raw)
 
@@ -109,7 +102,6 @@ def load_and_split() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     os.makedirs("src/model/trained", exist_ok=True)
 
-    # Save unscaled training stats (used by drift detection)
     stats = {
         feat: {"mean": float(train[feat].mean()), "std": float(train[feat].std())}
         for feat in MODEL_FEATURES
@@ -117,17 +109,8 @@ def load_and_split() -> tuple[pd.DataFrame, pd.DataFrame]:
     with open("src/model/trained/training_stats.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-    # Save unscaled splits (used by scheduler for replay and drift detection)
     os.makedirs("data/processed", exist_ok=True)
     train.to_csv("data/processed/train.csv")
     test.to_csv("data/processed/test.csv")
 
-    # Fit scaler on train features and save
-    scaler = StandardScaler()
-    train_scaled = train.copy()
-    test_scaled = test.copy()
-    train_scaled[MODEL_FEATURES] = scaler.fit_transform(train[MODEL_FEATURES])
-    test_scaled[MODEL_FEATURES] = scaler.transform(test[MODEL_FEATURES])
-    joblib.dump(scaler, "src/model/trained/scaler.joblib")
-
-    return train_scaled, test_scaled
+    return train, test

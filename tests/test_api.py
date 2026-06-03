@@ -1,3 +1,4 @@
+import json
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
@@ -106,32 +107,36 @@ def test_get_predictions_invalid_since_returns_422(client):
     assert response.status_code == 422
 
 
+_MOCK_BILL_INLINE = {
+    "optimistic_gbp": 45.00,
+    "most_likely_gbp": 62.00,
+    "pessimistic_gbp": 82.00,
+    "period": "7 days",
+}
+
+_MOCK_FORECAST_7D_INLINE = {
+    "forecast": [
+        {
+            "date": "2013-12-17",
+            "predicted_wh": 6000.0,
+            "predicted_kwh": 6.0,
+            "lower_wh": 4000.0,
+            "upper_wh": 8000.0,
+            "estimated_cost_gbp": 2.04,
+        }
+    ] * 7,
+    "peak_day": "Monday",
+    "lowest_day": "Sunday",
+    "projected_week_bill": _MOCK_BILL_INLINE,
+}
+
+
 def test_forecast_7d_valid_returns_200():
     from src.api.main import app
     from fastapi.testclient import TestClient
     from unittest.mock import patch
     client = TestClient(app)
-    mock_forecast_result = {
-        "forecast": [
-            {
-                "date": "2013-12-17",
-                "predicted_wh": 6000.0,
-                "predicted_kwh": 6.0,
-                "lower_wh": 4000.0,
-                "upper_wh": 8000.0,
-                "estimated_cost_gbp": 2.04,
-            }
-        ] * 7,
-        "peak_day": "Monday",
-        "lowest_day": "Sunday",
-    }
-    mock_bill = {
-        "optimistic_gbp": 45.00,
-        "most_likely_gbp": 62.00,
-        "pessimistic_gbp": 82.00,
-    }
-    with patch("src.api.routes.forecast_7d", return_value=mock_forecast_result), \
-         patch("src.api.routes.project_monthly_bill", return_value=mock_bill):
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_INLINE):
         response = client.get("/api/v1/forecast/7d")
     assert response.status_code == 200
 
@@ -141,33 +146,13 @@ def test_forecast_7d_response_has_required_keys():
     from fastapi.testclient import TestClient
     from unittest.mock import patch
     client = TestClient(app)
-    mock_forecast_result = {
-        "forecast": [
-            {
-                "date": "2013-12-17",
-                "predicted_wh": 6000.0,
-                "predicted_kwh": 6.0,
-                "lower_wh": 4000.0,
-                "upper_wh": 8000.0,
-                "estimated_cost_gbp": 2.04,
-            }
-        ] * 7,
-        "peak_day": "Monday",
-        "lowest_day": "Sunday",
-    }
-    mock_bill = {
-        "optimistic_gbp": 45.00,
-        "most_likely_gbp": 62.00,
-        "pessimistic_gbp": 82.00,
-    }
-    with patch("src.api.routes.forecast_7d", return_value=mock_forecast_result), \
-         patch("src.api.routes.project_monthly_bill", return_value=mock_bill):
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_INLINE):
         response = client.get("/api/v1/forecast/7d")
     data = response.json()
-    assert set(data.keys()) == {"forecast", "peak_day", "lowest_day", "projected_month_bill"}
+    assert set(data.keys()) == {"forecast", "peak_day", "lowest_day", "projected_week_bill"}
     assert len(data["forecast"]) == 7
-    assert set(data["projected_month_bill"].keys()) == {
-        "optimistic_gbp", "most_likely_gbp", "pessimistic_gbp"
+    assert set(data["projected_week_bill"].keys()) == {
+        "optimistic_gbp", "most_likely_gbp", "pessimistic_gbp", "period"
     }
 
 
@@ -251,16 +236,18 @@ _MOCK_7D_FORECAST = [
     for i in range(7)
 ]
 
-_MOCK_FORECAST_7D_RESULT = {
-    "forecast": _MOCK_7D_FORECAST,
-    "peak_day": "Sunday",
-    "lowest_day": "Monday",
-}
-
 _MOCK_BILL = {
     "optimistic_gbp": 45.00,
     "most_likely_gbp": 62.00,
     "pessimistic_gbp": 82.00,
+    "period": "7 days",
+}
+
+_MOCK_FORECAST_7D_RESULT = {
+    "forecast": _MOCK_7D_FORECAST,
+    "peak_day": "Sunday",
+    "lowest_day": "Monday",
+    "projected_week_bill": _MOCK_BILL,
 }
 
 
@@ -269,8 +256,7 @@ def test_forecast_7d_returns_200_with_7_element_array():
     from fastapi.testclient import TestClient
     from unittest.mock import patch
     client = TestClient(app)
-    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT), \
-         patch("src.api.routes.project_monthly_bill", return_value=_MOCK_BILL):
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT):
         response = client.get("/api/v1/forecast/7d")
     assert response.status_code == 200
     assert len(response.json()["forecast"]) == 7
@@ -281,11 +267,10 @@ def test_forecast_7d_bill_fields_all_present():
     from fastapi.testclient import TestClient
     from unittest.mock import patch
     client = TestClient(app)
-    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT), \
-         patch("src.api.routes.project_monthly_bill", return_value=_MOCK_BILL):
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT):
         response = client.get("/api/v1/forecast/7d")
-    bill = response.json()["projected_month_bill"]
-    assert {"optimistic_gbp", "most_likely_gbp", "pessimistic_gbp"}.issubset(bill.keys())
+    bill = response.json()["projected_week_bill"]
+    assert {"optimistic_gbp", "most_likely_gbp", "pessimistic_gbp", "period"}.issubset(bill.keys())
 
 
 def test_forecast_7d_bill_ordering_holds():
@@ -293,80 +278,47 @@ def test_forecast_7d_bill_ordering_holds():
     from fastapi.testclient import TestClient
     from unittest.mock import patch
     client = TestClient(app)
-    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT), \
-         patch("src.api.routes.project_monthly_bill", return_value=_MOCK_BILL):
+    with patch("src.api.routes.forecast_7d", return_value=_MOCK_FORECAST_7D_RESULT):
         response = client.get("/api/v1/forecast/7d")
-    bill = response.json()["projected_month_bill"]
+    bill = response.json()["projected_week_bill"]
     assert bill["optimistic_gbp"] <= bill["most_likely_gbp"] <= bill["pessimistic_gbp"]
 
 
 # ── GET /api/v1/models/leaderboard ───────────────────────────────────────────
 
-_LEADERBOARD = {
-    "regression": [
-        {"model": "RandomForest", "r2": 0.91, "winner": False},
-        {"model": "XGBoost",      "r2": 0.94, "winner": True},
-        {"model": "LightGBM",     "r2": 0.92, "winner": False},
-        {"model": "CatBoost",     "r2": 0.90, "winner": False},
-        {"model": "ExtraTrees",   "r2": 0.89, "winner": False},
-        {"model": "Ridge",        "r2": 0.78, "winner": False},
-    ],
-    "forecast": [
-        {"model": "Chronos",      "mape": 0.08, "winner": True},
-        {"model": "MSTL",         "mape": 0.10, "winner": False},
-        {"model": "XGBoost_lags", "mape": 0.12, "winner": False},
-    ],
-}
+_FORECAST_LEADERBOARD = [
+    {"model": "Chronos",      "mape": 0.08, "winner": True},
+    {"model": "MSTL",         "mape": 0.10, "winner": False},
+    {"model": "XGBoost_lags", "mape": 0.12, "winner": False},
+]
 
 
-def test_get_leaderboard_returns_200_with_regression_and_forecast_keys(tmp_path):
-    import json
-    from unittest.mock import patch
+def test_get_leaderboard_returns_200_with_forecast_key(tmp_path):
     from fastapi.testclient import TestClient
     from src.api.main import app
+    import pathlib
 
-    lb_file = tmp_path / "leaderboard.json"
-    lb_file.write_text(json.dumps(_LEADERBOARD))
-    model_path = tmp_path / "model_full.joblib"
+    lb_file = tmp_path / "forecast_leaderboard.json"
+    lb_file.write_text(json.dumps(_FORECAST_LEADERBOARD))
 
     client = TestClient(app)
-    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+    with patch("src.api.routes._FORECAST_LEADERBOARD_PATH", lb_file):
         response = client.get("/api/v1/models/leaderboard")
 
     assert response.status_code == 200
     data = response.json()
-    assert "regression" in data
     assert "forecast" in data
 
 
-def test_get_leaderboard_regression_has_exactly_one_winner(tmp_path):
-    import json
-    from unittest.mock import patch
-    from fastapi.testclient import TestClient
-    from src.api.main import app
-
-    (tmp_path / "leaderboard.json").write_text(json.dumps(_LEADERBOARD))
-    model_path = tmp_path / "model_full.joblib"
-
-    client = TestClient(app)
-    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
-        response = client.get("/api/v1/models/leaderboard")
-
-    data = response.json()
-    assert sum(1 for e in data["regression"] if e["winner"]) == 1
-
-
 def test_get_leaderboard_forecast_has_exactly_one_winner(tmp_path):
-    import json
-    from unittest.mock import patch
     from fastapi.testclient import TestClient
     from src.api.main import app
 
-    (tmp_path / "leaderboard.json").write_text(json.dumps(_LEADERBOARD))
-    model_path = tmp_path / "model_full.joblib"
+    lb_file = tmp_path / "forecast_leaderboard.json"
+    lb_file.write_text(json.dumps(_FORECAST_LEADERBOARD))
 
     client = TestClient(app)
-    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+    with patch("src.api.routes._FORECAST_LEADERBOARD_PATH", lb_file):
         response = client.get("/api/v1/models/leaderboard")
 
     data = response.json()
@@ -374,14 +326,13 @@ def test_get_leaderboard_forecast_has_exactly_one_winner(tmp_path):
 
 
 def test_get_leaderboard_returns_503_when_leaderboard_file_absent(tmp_path):
-    from unittest.mock import patch
     from fastapi.testclient import TestClient
     from src.api.main import app
 
-    model_path = tmp_path / "model_full.joblib"
+    missing_path = tmp_path / "nonexistent.json"
 
     client = TestClient(app)
-    with patch.dict("os.environ", {"MODEL_PATH_FULL": str(model_path)}):
+    with patch("src.api.routes._FORECAST_LEADERBOARD_PATH", missing_path):
         response = client.get("/api/v1/models/leaderboard")
 
     assert response.status_code == 503

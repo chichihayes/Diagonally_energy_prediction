@@ -62,28 +62,6 @@ def test_build_lag_matrix_x_and_y_same_length():
     assert len(X) == len(y)
 
 
-def test_build_model_matrix_returns_13_features():
-    from src.services.features import build_model_matrix
-    df = _make_preprocessed_df()
-    X, y = build_model_matrix(df)
-    assert list(X.columns) == MODEL_FEATURES
-    assert len(X.columns) == 13
-
-
-def test_build_model_matrix_target_is_aggregate_wh():
-    from src.services.features import build_model_matrix
-    df = _make_preprocessed_df()
-    X, y = build_model_matrix(df)
-    assert y.name == "aggregate_wh"
-
-
-def test_build_model_matrix_no_nulls():
-    from src.services.features import build_model_matrix
-    df = _make_preprocessed_df()
-    X, y = build_model_matrix(df)
-    assert X.isna().sum().sum() == 0
-
-
 def test_model_features_has_correct_names():
     assert "hour" in MODEL_FEATURES
     assert "is_night" in MODEL_FEATURES

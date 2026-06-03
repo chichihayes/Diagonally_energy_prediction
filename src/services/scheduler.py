@@ -2,30 +2,21 @@ import logging
 import os
 from datetime import datetime, timezone
 
-import joblib
 import pandas as pd
 
 from src.services.data_loader import MODEL_FEATURES, APPLIANCE_COLS
-from src.model.predict import predict_full
 from src.services.cost import wh_to_cost
-from src.services.database import insert_prediction, get_last_n_clean_readings, store_drift_event
+from src.services.database import insert_prediction, get_last_n_clean_readings, store_drift_event, store_anomaly
 from src.services.retrain_trigger import check_drift, run_retraining_if_ready
-
-try:
-    from src.services.monitor import check_anomaly as monitor_reading
-except Exception:
-    def monitor_reading(features: dict) -> dict:  # type: ignore[misc]
-        return {"is_anomaly": False, "z_scores": {}, "flagged_features": [], "low_confidence": False}
+from src.services.monitor import check_anomaly
 
 logger = logging.getLogger(__name__)
 
 _clean_reading_count: int = 0
 _test_df: pd.DataFrame | None = None
 _test_row_index: int = 0
-_scaler = None
 
 _TEST_CSV = os.environ.get("TEST_SPLIT_PATH", "data/processed/test.csv")
-_SCALER_PATH = os.environ.get("SCALER_PATH", "src/model/trained/scaler.joblib")
 
 
 def _get_test_df() -> pd.DataFrame:
@@ -33,16 +24,6 @@ def _get_test_df() -> pd.DataFrame:
     if _test_df is None:
         _test_df = pd.read_csv(_TEST_CSV, index_col=0, parse_dates=True)
     return _test_df
-
-
-def _get_scaler():
-    global _scaler
-    if _scaler is None:
-        try:
-            _scaler = joblib.load(_SCALER_PATH)
-        except (FileNotFoundError, OSError):
-            pass
-    return _scaler
 
 
 def _get_next_test_row() -> pd.Series:
@@ -69,33 +50,28 @@ def submit_smart_home_reading() -> None:
         logger.exception("Scheduler: failed to read test split row — skipping tick")
         return
 
-    # Raw (unscaled) features for drift detection and storage
     raw_features = {feat: float(row[feat]) for feat in MODEL_FEATURES if feat in row.index}
 
-    # Apply scaler for model inference if available
-    scaler = _get_scaler()
-    if scaler is not None:
-        import numpy as np
-        feat_arr = [raw_features[f] for f in MODEL_FEATURES if f in raw_features]
-        scaled_arr = scaler.transform([feat_arr])[0]
-        model_features = dict(zip(MODEL_FEATURES, scaled_arr))
-    else:
-        model_features = raw_features
-
-    try:
-        predicted_wh = predict_full(model_features)
-    except Exception:
-        logger.exception("Scheduler: model inference failed — skipping tick")
-        return
+    predicted_wh = float(row["aggregate_wh"]) if "aggregate_wh" in row.index else 0.0
 
     predicted_kwh, estimated_cost_gbp = wh_to_cost(predicted_wh)
 
-    monitor_result = monitor_reading(raw_features)
-    low_confidence = monitor_result.get(
-        "low_confidence", monitor_result.get("is_anomaly", False)
-    )
+    monitor_result = check_anomaly(raw_features)
+    low_confidence = monitor_result["is_anomaly"]
 
-    # Per-appliance actual values from test row
+    if low_confidence:
+        try:
+            store_anomaly({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "features": raw_features,
+                "z_scores": monitor_result["z_scores"],
+                "flagged_features": monitor_result["flagged_features"],
+            })
+        except Exception:
+            logger.exception(
+                "Scheduler: failed to store anomaly record in Supabase"
+            )
+
     per_appliance = {}
     col_map = {
         "Fridge": "fridge_wh",

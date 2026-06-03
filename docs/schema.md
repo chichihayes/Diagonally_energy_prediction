@@ -98,6 +98,15 @@ Scaler saved as `src/model/trained/scaler.joblib`.
 | predicted_kwh | float | kWh | predicted_wh / 1000 |
 | estimated_cost_gbp | float | GBP | predicted_kwh × ELECTRICITY_TARIFF_GBP_PER_KWH |
 
+### Forecast Output — projected_week_bill (GET /api/v1/forecast/7d)
+
+| Field | Type | Description |
+|---|---|---|
+| optimistic_weekly_gbp | float | Optimistic 7-day cost in GBP (sum of lower_wh / 1000 × tariff) |
+| most_likely_weekly_gbp | float | Most likely 7-day cost in GBP (sum of predicted_wh / 1000 × tariff) |
+| pessimistic_weekly_gbp | float | Pessimistic 7-day cost in GBP (sum of upper_wh / 1000 × tariff) |
+| period | string | Always "7 days" |
+
 ---
 
 ## Supabase — predictions table

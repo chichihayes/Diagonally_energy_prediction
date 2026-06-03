@@ -14,34 +14,41 @@ _MOCK_FORECAST = [
 ]
 
 
-def test_project_monthly_bill_returns_correct_keys():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_returns_correct_keys():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_MOCK_FORECAST)
-    assert set(result.keys()) == {"optimistic_gbp", "most_likely_gbp", "pessimistic_gbp"}
+        result = project_weekly_bill(_MOCK_FORECAST)
+    assert set(result.keys()) == {"optimistic_gbp", "most_likely_gbp", "pessimistic_gbp", "period"}
 
 
-def test_project_monthly_bill_optimistic_gbp_correct():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_period_is_7_days():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_MOCK_FORECAST)
-    expected = round(sum(r["lower_wh"] for r in _MOCK_FORECAST) / 1000 * (30 / 7) * 0.34, 2)
+        result = project_weekly_bill(_MOCK_FORECAST)
+    assert result["period"] == "7 days"
+
+
+def test_project_weekly_bill_optimistic_gbp_correct():
+    from src.services.cost import project_weekly_bill
+    with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
+        result = project_weekly_bill(_MOCK_FORECAST)
+    expected = round(sum(r["lower_wh"] for r in _MOCK_FORECAST) / 1000 * 0.34, 2)
     assert result["optimistic_gbp"] == pytest.approx(expected, abs=0.01)
 
 
-def test_project_monthly_bill_most_likely_gbp_correct():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_most_likely_gbp_correct():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_MOCK_FORECAST)
-    expected = round(sum(r["predicted_wh"] for r in _MOCK_FORECAST) / 1000 * (30 / 7) * 0.34, 2)
+        result = project_weekly_bill(_MOCK_FORECAST)
+    expected = round(sum(r["predicted_wh"] for r in _MOCK_FORECAST) / 1000 * 0.34, 2)
     assert result["most_likely_gbp"] == pytest.approx(expected, abs=0.01)
 
 
-def test_project_monthly_bill_pessimistic_gbp_correct_and_ordering():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_pessimistic_gbp_correct_and_ordering():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_MOCK_FORECAST)
-    expected = round(sum(r["upper_wh"] for r in _MOCK_FORECAST) / 1000 * (30 / 7) * 0.34, 2)
+        result = project_weekly_bill(_MOCK_FORECAST)
+    expected = round(sum(r["upper_wh"] for r in _MOCK_FORECAST) / 1000 * 0.34, 2)
     assert result["pessimistic_gbp"] == pytest.approx(expected, abs=0.01)
     assert result["optimistic_gbp"] <= result["most_likely_gbp"] <= result["pessimistic_gbp"]
 
@@ -72,27 +79,27 @@ def test_wh_to_cost_reads_tariff_from_env(monkeypatch):
 _COST_MOCK_FORECAST = [
     {"predicted_wh": 6000.0, "lower_wh": 4000.0, "upper_wh": 8000.0},
 ] * 7
-# sum(lower_wh) = 28000 Wh = 28 kWh  →  28 * (30/7) * 0.34 = 40.80
-# sum(predicted) = 42000 Wh = 42 kWh  →  42 * (30/7) * 0.34 = 61.20
-# sum(upper_wh)  = 56000 Wh = 56 kWh  →  56 * (30/7) * 0.34 = 81.60
+# sum(lower_wh)  = 28000 Wh = 28 kWh  → 28 * 0.34 = 9.52
+# sum(predicted) = 42000 Wh = 42 kWh  → 42 * 0.34 = 14.28
+# sum(upper_wh)  = 56000 Wh = 56 kWh  → 56 * 0.34 = 19.04
 
 
-def test_project_monthly_bill_optimistic_uses_lower_wh():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_optimistic_uses_lower_wh():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_COST_MOCK_FORECAST)
-    assert result["optimistic_gbp"] == pytest.approx(40.80, abs=0.01)
+        result = project_weekly_bill(_COST_MOCK_FORECAST)
+    assert result["optimistic_gbp"] == pytest.approx(9.52, abs=0.01)
 
 
-def test_project_monthly_bill_most_likely_uses_predicted_wh():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_most_likely_uses_predicted_wh():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_COST_MOCK_FORECAST)
-    assert result["most_likely_gbp"] == pytest.approx(61.20, abs=0.01)
+        result = project_weekly_bill(_COST_MOCK_FORECAST)
+    assert result["most_likely_gbp"] == pytest.approx(14.28, abs=0.01)
 
 
-def test_project_monthly_bill_pessimistic_uses_upper_wh():
-    from src.services.cost import project_monthly_bill
+def test_project_weekly_bill_pessimistic_uses_upper_wh():
+    from src.services.cost import project_weekly_bill
     with patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
-        result = project_monthly_bill(_COST_MOCK_FORECAST)
-    assert result["pessimistic_gbp"] == pytest.approx(81.60, abs=0.01)
+        result = project_weekly_bill(_COST_MOCK_FORECAST)
+    assert result["pessimistic_gbp"] == pytest.approx(19.04, abs=0.01)

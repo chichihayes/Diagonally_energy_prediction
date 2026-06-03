@@ -170,3 +170,40 @@ def train_and_save(output_path: str = "src/model/trained/model_forecast.joblib")
         json.dump(leaderboard, f, indent=2)
 
     return {name: entry["mape"] for name, entry in results.items()}
+
+
+def train_and_evaluate(extra_rows: pd.DataFrame = None) -> dict:
+    """Train forecast models, optionally augmented with extra_rows; return best model artifact and MAPE."""
+    train_df, test_df = load_and_split()
+    if extra_rows is not None and len(extra_rows) > 0:
+        train_df = pd.concat([train_df, extra_rows])
+
+    results = {}
+
+    logger.info("Training XGBoost with lag features …")
+    xgb_model, xgb_mae, xgb_rmse, xgb_mape = _train_xgb_lags(train_df, test_df)
+    results["XGBoost_lags"] = {"model": xgb_model, "mae": xgb_mae, "rmse": xgb_rmse, "mape": xgb_mape}
+
+    logger.info("Training MSTL …")
+    try:
+        mstl_model, mstl_mae, mstl_rmse, mstl_mape = _train_mstl(train_df, test_df)
+        results["MSTL"] = {"model": mstl_model, "mae": mstl_mae, "rmse": mstl_rmse, "mape": mstl_mape}
+    except Exception as e:
+        logger.warning(f"MSTL training failed: {e}")
+
+    logger.info("Training Chronos-Bolt (Small) …")
+    try:
+        chronos_model, ch_mae, ch_rmse, ch_mape = _train_chronos(train_df, test_df)
+        results["Chronos"] = {"model": chronos_model, "mae": ch_mae, "rmse": ch_rmse, "mape": ch_mape}
+    except Exception as e:
+        logger.warning(f"Chronos training failed: {e}")
+
+    if not results:
+        raise RuntimeError("All forecast models failed to train")
+
+    best_name = min(results, key=lambda k: results[k]["mape"])
+    best_entry = results[best_name]
+    return {
+        "best_model": {"model": best_entry["model"], "model_type": best_name},
+        "best_mape": best_entry["mape"],
+    }

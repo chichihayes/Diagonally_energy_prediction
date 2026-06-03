@@ -1,9 +1,10 @@
 import json
 import os
+import pandas as pd
 import joblib
 from datetime import datetime, timezone
 import scripts.run_retraining as _retraining_script
-from src.services.database import supabase
+from src.services.database import supabase, fetch_clean_rows
 from src.services.data_loader import MODEL_FEATURES
 
 _STATS_PATH = os.path.join(
@@ -18,8 +19,8 @@ _training_means = {feat: _stats[feat]["mean"] for feat in MODEL_FEATURES if feat
 _CLEAN_ROW_THRESHOLD = 2000
 _ANOMALY_RATE_MAX = 0.10
 
-_MODEL_PATH = os.environ.get("MODEL_PATH_FULL", "src/model/trained/model_full.joblib")
-_META_PATH = _MODEL_PATH.replace(".joblib", ".meta.json")
+_FORECAST_MODEL_PATH = os.environ.get("MODEL_PATH_FORECAST", "src/model/trained/model_forecast.joblib")
+_LEADERBOARD_PATH = "src/model/trained/forecast_leaderboard.json"
 _drift_first_detected: str | None = None
 
 
@@ -67,14 +68,14 @@ def should_retrain(
     return anomaly_rate < _ANOMALY_RATE_MAX
 
 
-def _read_meta() -> dict:
-    with open(_META_PATH) as f:
-        return json.load(f)
-
-
-def _write_meta(data: dict) -> None:
-    with open(_META_PATH, "w") as f:
-        json.dump(data, f)
+def _read_current_mape() -> float:
+    try:
+        with open(_LEADERBOARD_PATH) as f:
+            data = json.load(f)
+        winner = next((e for e in data if e.get("winner")), None)
+        return float(winner["mape"]) if winner else float("inf")
+    except (FileNotFoundError, KeyError, TypeError):
+        return float("inf")
 
 
 def run_retraining_if_ready(
@@ -86,22 +87,28 @@ def run_retraining_if_ready(
     if not should_retrain(drift_detected, clean_row_count, total_row_count):
         return
 
-    old_meta = _read_meta()
-    old_r2 = old_meta.get("r2", 0.0)
+    old_mape = _read_current_mape()
 
-    result = _retraining_script.run_retraining()
-    new_r2 = result["new_r2"]
-    model_replaced = new_r2 > old_r2
+    raw_rows = fetch_clean_rows()
+    clean_rows = [r for r in raw_rows if not r.get("low_confidence", True)]
+    if clean_rows:
+        df = pd.DataFrame([r["input_features"] for r in clean_rows])
+        df["aggregate_wh"] = [r.get("aggregate_wh", r.get("predicted_wh", 0)) for r in clean_rows]
+    else:
+        df = pd.DataFrame()
+
+    result = _retraining_script.run_retraining(df)
+    new_mape = result["new_mape"]
+    model_replaced = new_mape < old_mape
 
     if model_replaced:
-        joblib.dump(result["best_model"], _MODEL_PATH)
-        _write_meta({"r2": new_r2})
+        joblib.dump(result["best_model"], _FORECAST_MODEL_PATH)
 
     supabase.table("retrain_log").insert({
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "trigger_reason": "drift + row_count + anomaly_rate all met",
-        "old_model_r2": old_r2,
-        "new_model_r2": new_r2,
+        "old_mape": old_mape,
+        "new_mape": new_mape,
         "model_replaced": model_replaced,
         "rows_used": result["rows_used"],
     }).execute()

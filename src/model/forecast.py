@@ -19,6 +19,18 @@ def _get_tariff() -> float:
     return float(os.environ["ELECTRICITY_TARIFF_GBP_PER_KWH"])
 
 
+def _project_weekly_bill(forecast_items: list, tariff: float) -> dict:
+    likely_kwh = sum(r["predicted_wh"] for r in forecast_items) / 1000
+    optimistic_kwh = sum(r["lower_wh"] for r in forecast_items) / 1000
+    pessimistic_kwh = sum(r["upper_wh"] for r in forecast_items) / 1000
+    return {
+        "optimistic_gbp": round(optimistic_kwh * tariff, 2),
+        "most_likely_gbp": round(likely_kwh * tariff, 2),
+        "pessimistic_gbp": round(pessimistic_kwh * tariff, 2),
+        "period": "7 days",
+    }
+
+
 def forecast_7d() -> dict:
     tariff = _get_tariff()
     today = date.today()
@@ -48,6 +60,7 @@ def forecast_7d() -> dict:
         "forecast": forecast,
         "peak_day": (today + timedelta(days=peak_idx)).strftime("%A"),
         "lowest_day": (today + timedelta(days=low_idx)).strftime("%A"),
+        "projected_week_bill": _project_weekly_bill(forecast, tariff),
     }
 
 

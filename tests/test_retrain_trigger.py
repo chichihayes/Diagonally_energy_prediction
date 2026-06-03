@@ -2,6 +2,7 @@ import json
 import os
 
 import pytest
+import pandas as pd
 
 from src.services.retrain_trigger import check_drift, should_retrain
 from src.services.data_loader import MODEL_FEATURES
@@ -39,7 +40,6 @@ def test_check_drift_no_drift_at_training_mean():
 
 
 def test_check_drift_detects_feature_above_threshold():
-    # Use lag_1 — it has a non-zero training mean, so 20% above will trigger
     feat = "lag_1"
     mean = _MEANS.get(feat, 500.0)
     if mean == 0:
@@ -106,103 +106,46 @@ def test_should_retrain_all_conditions_false_returns_false():
 
 # --- run_retraining tests ---
 
-import pandas as pd
 from unittest.mock import patch, MagicMock
 
 
-def _make_train_df(n=500) -> pd.DataFrame:
+def test_run_retraining_returns_best_model_and_mape():
+    from scripts.run_retraining import run_retraining
+    clean_rows = pd.DataFrame()
+    with patch("src.model.train_forecast.train_and_evaluate") as mock_train:
+        mock_train.return_value = {"best_model": MagicMock(), "best_mape": 0.08}
+        result = run_retraining(clean_rows)
+    assert set(result.keys()) == {"best_model", "new_mape", "rows_used"}
+    assert result["new_mape"] == 0.08
+    assert result["rows_used"] == 0
+
+
+def test_run_retraining_passes_extra_rows_to_train_and_evaluate():
+    from scripts.run_retraining import run_retraining
     import numpy as np
-    rng = np.random.default_rng(42)
-    df = pd.DataFrame(rng.random((n, len(MODEL_FEATURES))), columns=MODEL_FEATURES)
-    df["aggregate_wh"] = rng.uniform(100, 1000, n)
-    return df
-
-
-def test_run_retraining_returns_best_model_and_r2():
-    from scripts.run_retraining import run_retraining
-    with patch("scripts.run_retraining._load_base_data", return_value=_make_train_df()), \
-         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
-         patch("scripts.run_retraining.train_all_models") as mock_train:
-        mock_train.return_value = (MagicMock(), 0.85)
-        result = run_retraining()
-    assert set(result.keys()) == {"best_model", "new_r2", "rows_used"}
-    assert isinstance(result["new_r2"], float)
-    assert -1.0 <= result["new_r2"] <= 1.0
-
-
-def test_run_retraining_uses_only_model_features_as_X():
-    from scripts.run_retraining import run_retraining
+    rng = np.random.default_rng(0)
+    clean_rows = pd.DataFrame(rng.random((50, len(MODEL_FEATURES))), columns=MODEL_FEATURES)
+    clean_rows["aggregate_wh"] = rng.uniform(100, 1000, 50)
     captured = {}
 
-    def capture_train(X_train, y_train, X_test, y_test):
-        captured["columns"] = list(X_train.columns)
-        return (MagicMock(), 0.80)
+    def capture(extra_rows=None):
+        captured["extra_rows"] = extra_rows
+        return {"best_model": MagicMock(), "best_mape": 0.09}
 
-    with patch("scripts.run_retraining._load_base_data", return_value=_make_train_df()), \
-         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
-         patch("scripts.run_retraining.train_all_models", side_effect=capture_train):
-        run_retraining()
-    assert set(captured["columns"]) == set(MODEL_FEATURES)
+    with patch("src.model.train_forecast.train_and_evaluate", side_effect=capture):
+        result = run_retraining(clean_rows)
 
-
-def test_run_retraining_uses_time_ordered_split():
-    from scripts.run_retraining import run_retraining
-    captured = {}
-
-    def capture_train(X_train, y_train, X_test, y_test):
-        captured["n_train"] = len(X_train)
-        captured["n_test"] = len(X_test)
-        return (MagicMock(), 0.80)
-
-    df = _make_train_df(n=500)
-    with patch("scripts.run_retraining._load_base_data", return_value=df), \
-         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
-         patch("scripts.run_retraining.train_all_models", side_effect=capture_train):
-        run_retraining()
-    assert captured["n_train"] == 400
-    assert captured["n_test"] == 100
-
-
-def test_run_retraining_excludes_low_confidence_rows():
-    from scripts.run_retraining import run_retraining
-    captured = {}
-
-    def capture_train(X_train, y_train, X_test, y_test):
-        captured["total_rows"] = len(X_train) + len(X_test)
-        return (MagicMock(), 0.80)
-
-    supabase_rows = [
-        {"low_confidence": False, "input_features": {f: 5.0 for f in MODEL_FEATURES}, "aggregate_wh": 100.0},
-        {"low_confidence": True,  "input_features": {f: 5.0 for f in MODEL_FEATURES}, "aggregate_wh": 500.0},
-        {"low_confidence": False, "input_features": {f: 5.0 for f in MODEL_FEATURES}, "aggregate_wh": 90.0},
-    ]
-    with patch("scripts.run_retraining._load_base_data", return_value=_make_train_df(n=100)), \
-         patch("scripts.run_retraining.fetch_clean_rows", return_value=supabase_rows), \
-         patch("scripts.run_retraining.train_all_models", side_effect=capture_train):
-        result = run_retraining()
-    assert result["rows_used"] == 102
-
-
-def test_run_retraining_uses_base_data_when_supabase_empty():
-    from scripts.run_retraining import run_retraining
-    with patch("scripts.run_retraining._load_base_data", return_value=_make_train_df(n=200)), \
-         patch("scripts.run_retraining.fetch_clean_rows", return_value=[]), \
-         patch("scripts.run_retraining.train_all_models") as mock_train:
-        mock_train.return_value = (MagicMock(), 0.75)
-        result = run_retraining()
-    assert result["rows_used"] == 200
-    assert result["new_r2"] == 0.75
+    assert captured["extra_rows"] is clean_rows
+    assert result["rows_used"] == 50
 
 
 # --- run_retraining_if_ready tests ---
 
-import json as _json
 from unittest.mock import patch, MagicMock, mock_open
 
-
-_META_OLD = {"r2": 0.75}
-_META_HIGHER = {"best_model": MagicMock(), "new_r2": 0.85, "rows_used": 2500}
-_META_LOWER  = {"best_model": MagicMock(), "new_r2": 0.60, "rows_used": 2500}
+_OLD_MAPE = 0.12
+_RESULT_BETTER_MAPE = {"best_model": MagicMock(), "new_mape": 0.08, "rows_used": 2500}
+_RESULT_WORSE_MAPE = {"best_model": MagicMock(), "new_mape": 0.16, "rows_used": 2500}
 
 
 def test_run_retraining_if_ready_skips_when_should_retrain_false():
@@ -215,12 +158,13 @@ def test_run_retraining_if_ready_skips_when_should_retrain_false():
     mock_run.assert_not_called()
 
 
-def test_run_retraining_if_ready_replaces_model_when_new_r2_higher():
+def test_run_retraining_if_ready_replaces_model_when_new_mape_lower():
     from src.services import retrain_trigger
     mock_supabase = MagicMock()
     with patch.object(retrain_trigger, "should_retrain", return_value=True), \
-         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
-         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch.object(retrain_trigger, "_read_current_mape", return_value=_OLD_MAPE), \
+         patch("src.services.retrain_trigger.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.run_retraining", return_value=_RESULT_BETTER_MAPE), \
          patch("joblib.dump") as mock_dump, \
          patch("src.services.retrain_trigger.supabase", mock_supabase):
         retrain_trigger.run_retraining_if_ready(
@@ -231,12 +175,13 @@ def test_run_retraining_if_ready_replaces_model_when_new_r2_higher():
     assert insert_call["model_replaced"] is True
 
 
-def test_run_retraining_if_ready_keeps_model_when_new_r2_lower():
+def test_run_retraining_if_ready_keeps_model_when_new_mape_higher():
     from src.services import retrain_trigger
     mock_supabase = MagicMock()
     with patch.object(retrain_trigger, "should_retrain", return_value=True), \
-         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
-         patch("scripts.run_retraining.run_retraining", return_value=_META_LOWER), \
+         patch.object(retrain_trigger, "_read_current_mape", return_value=_OLD_MAPE), \
+         patch("src.services.retrain_trigger.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.run_retraining", return_value=_RESULT_WORSE_MAPE), \
          patch("joblib.dump") as mock_dump, \
          patch("src.services.retrain_trigger.supabase", mock_supabase):
         retrain_trigger.run_retraining_if_ready(
@@ -251,8 +196,9 @@ def test_run_retraining_if_ready_resets_drift_flag_after_retrain():
     from src.services import retrain_trigger
     retrain_trigger._drift_first_detected = "2013-12-01T00:00:00"
     with patch.object(retrain_trigger, "should_retrain", return_value=True), \
-         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
-         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch.object(retrain_trigger, "_read_current_mape", return_value=_OLD_MAPE), \
+         patch("src.services.retrain_trigger.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.run_retraining", return_value=_RESULT_BETTER_MAPE), \
          patch("joblib.dump"), \
          patch("src.services.retrain_trigger.supabase", MagicMock()):
         retrain_trigger.run_retraining_if_ready(
@@ -265,17 +211,16 @@ def test_run_retraining_if_ready_inserts_retrain_log_row():
     from src.services import retrain_trigger
     mock_supabase = MagicMock()
     with patch.object(retrain_trigger, "should_retrain", return_value=True), \
-         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
-         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch.object(retrain_trigger, "_read_current_mape", return_value=_OLD_MAPE), \
+         patch("src.services.retrain_trigger.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.run_retraining", return_value=_RESULT_BETTER_MAPE), \
          patch("joblib.dump"), \
          patch("src.services.retrain_trigger.supabase", mock_supabase):
         retrain_trigger.run_retraining_if_ready(
             drift_detected=True, clean_row_count=2000, total_row_count=2200
         )
     inserted = mock_supabase.table.return_value.insert.call_args[0][0]
-    assert {"model_replaced", "old_model_r2", "new_model_r2", "rows_used"}.issubset(
-        inserted.keys()
-    )
+    assert {"model_replaced", "old_mape", "new_mape", "rows_used"}.issubset(inserted.keys())
     mock_supabase.table.return_value.insert.return_value.execute.assert_called_once()
 
 
@@ -283,8 +228,9 @@ def test_run_retraining_if_ready_calls_correct_table():
     from src.services import retrain_trigger
     mock_supabase = MagicMock()
     with patch.object(retrain_trigger, "should_retrain", return_value=True), \
-         patch.object(retrain_trigger, "_read_meta", return_value=_META_OLD), \
-         patch("scripts.run_retraining.run_retraining", return_value=_META_HIGHER), \
+         patch.object(retrain_trigger, "_read_current_mape", return_value=_OLD_MAPE), \
+         patch("src.services.retrain_trigger.fetch_clean_rows", return_value=[]), \
+         patch("scripts.run_retraining.run_retraining", return_value=_RESULT_BETTER_MAPE), \
          patch("joblib.dump"), \
          patch("src.services.retrain_trigger.supabase", mock_supabase):
         retrain_trigger.run_retraining_if_ready(
@@ -301,11 +247,9 @@ def test_scheduler_calls_run_retraining_if_ready_after_drift_check():
     drift_result = {"drift_detected": True, "drifted_features": ["lag_1"], "deviations": {"lag_1": 20.0}}
 
     with patch("src.services.scheduler._get_next_test_row", return_value=_make_test_row()), \
-         patch("src.services.scheduler._get_scaler", return_value=None), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.09, 0.03)), \
          patch("src.services.scheduler.insert_prediction"), \
-         patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}), \
+         patch("src.services.scheduler.check_anomaly", return_value={"is_anomaly": False, "z_scores": {}, "flagged_features": []}), \
          patch("src.services.scheduler.get_last_n_clean_readings", return_value=mock_clean_rows), \
          patch("src.services.scheduler.check_drift", return_value=drift_result), \
          patch("src.services.scheduler.store_drift_event"), \
@@ -323,8 +267,8 @@ from fastapi.testclient import TestClient
 
 _RETRAIN_LOG_ROW = {
     "timestamp": "2013-12-16T10:00:00+00:00",
-    "old_model_r2": 0.75,
-    "new_model_r2": 0.85,
+    "old_mape": 0.12,
+    "new_mape": 0.08,
     "model_replaced": True,
     "rows_used": 2500,
 }
@@ -345,7 +289,7 @@ def test_retrain_status_returns_200_with_correct_shape():
         response = _client().get("/api/v1/monitor/retrain")
     assert response.status_code == 200
     body = response.json()
-    assert {"timestamp", "old_model_r2", "new_model_r2", "model_replaced", "rows_used"} \
+    assert {"timestamp", "old_mape", "new_mape", "model_replaced", "rows_used"} \
         .issubset(body.keys())
 
 

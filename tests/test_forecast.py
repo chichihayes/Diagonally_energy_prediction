@@ -65,6 +65,19 @@ def test_forecast_7d_predicted_kwh_equals_wh_over_1000():
         assert row["predicted_kwh"] == pytest.approx(row["predicted_wh"] / 1000, rel=1e-5)
 
 
+def test_forecast_7d_includes_projected_week_bill():
+    from src.model.forecast import forecast_7d
+    mock_df = _make_mock_prophet_output()
+    with patch("src.model.forecast._model") as mock_model, \
+         patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
+        mock_model.predict.return_value = mock_df
+        result = forecast_7d()
+    bill = result["projected_week_bill"]
+    assert set(bill.keys()) == {"optimistic_gbp", "most_likely_gbp", "pessimistic_gbp", "period"}
+    assert bill["period"] == "7 days"
+    assert bill["optimistic_gbp"] <= bill["most_likely_gbp"] <= bill["pessimistic_gbp"]
+
+
 def test_forecast_7d_peak_and_lowest_day_correct():
     from src.model.forecast import forecast_7d
     mock_df = _make_mock_prophet_output()

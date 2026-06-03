@@ -1,15 +1,15 @@
 import json
-import os
 import pathlib
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 
 from src.services import database
 from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
-from src.services.cost import project_monthly_bill
 from src.services.database import supabase
 
 router = APIRouter(prefix="/api/v1")
+
+_FORECAST_LEADERBOARD_PATH = pathlib.Path("src/model/trained/forecast_leaderboard.json")
 
 
 @router.get("/predictions")
@@ -24,14 +24,12 @@ def get_predictions_route(
 
 @router.get("/models/leaderboard")
 def get_leaderboard():
-    model_path = os.environ.get("MODEL_PATH_FULL", "src/model/trained/model_full.joblib")
-    leaderboard_path = pathlib.Path(model_path).parent / "leaderboard.json"
-    if not leaderboard_path.exists():
+    if not _FORECAST_LEADERBOARD_PATH.exists():
         raise HTTPException(
             status_code=503,
             detail="Leaderboard not available — run training scripts first",
         )
-    return json.loads(leaderboard_path.read_text())
+    return {"forecast": json.loads(_FORECAST_LEADERBOARD_PATH.read_text())}
 
 
 @router.get("/forecast/24h")
@@ -65,12 +63,11 @@ def get_forecast_7d():
         result = forecast_7d()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    bill = project_monthly_bill(result["forecast"])
     return {
         "forecast": result["forecast"],
         "peak_day": result["peak_day"],
         "lowest_day": result["lowest_day"],
-        "projected_month_bill": bill,
+        "projected_week_bill": result["projected_week_bill"],
     }
 
 
@@ -90,7 +87,7 @@ def get_retrain_status():
     try:
         result = (
             supabase.table("retrain_log")
-            .select("timestamp,old_model_r2,new_model_r2,model_replaced,rows_used")
+            .select("timestamp,old_mape,new_mape,model_replaced,rows_used")
             .order("timestamp", desc=True)
             .limit(1)
             .execute()

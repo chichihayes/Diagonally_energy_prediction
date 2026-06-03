@@ -69,7 +69,7 @@ Returns hourly consumption forecast for the next 24 hours.
 
 ## GET /api/v1/forecast/7d
 
-Returns daily consumption forecast for the next 7 days with monthly bill projection.
+Returns daily consumption forecast for the next 7 days with weekly bill projection.
 
 **Response — 200:**
 ```json
@@ -86,10 +86,11 @@ Returns daily consumption forecast for the next 7 days with monthly bill project
   ],
   "peak_day": "Tuesday",
   "lowest_day": "Wednesday",
-  "projected_month_bill": {
-    "optimistic_gbp": 48.00,
-    "pessimistic_gbp": 76.00,
-    "most_likely_gbp": 62.00
+  "projected_week_bill": {
+    "optimistic_gbp": 11.50,
+    "most_likely_gbp": 15.90,
+    "pessimistic_gbp": 19.80,
+    "period": "7 days"
   }
 }
 ```

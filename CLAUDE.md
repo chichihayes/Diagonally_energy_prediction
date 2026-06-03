@@ -1,4 +1,4 @@
-﻿# CLAUDE.md â€” Diagonally Energy Prediction
+# CLAUDE.md — Diagonally Energy Prediction
 
 ## What this app is
 Diagonally Energy Prediction is a machine learning system that predicts household
@@ -7,21 +7,19 @@ It covers 9 individual appliances (Fridge, ChestFreezer, UprightFreezer, TumbleD
 WashingMachine, Dishwasher, Computer, Television, ElectricHeater) over the period
 October 9 – January 2 2014.
 
-The system trains a regression model to predict aggregate energy consumption from
-time-based and lag features, and a time series forecast model (Chronos-Bolt, MSTL,
-or XGBoost with lags) to predict future consumption over 24 hours and 7 days.
+The system trains a time series forecast model (Chronos-Bolt, MSTL, or XGBoost with
+lags) to predict future consumption over 24 hours and 7 days.
 
 A scheduler replays the test split (Dec 16 – Jan 2 2014) rows every 15 minutes,
-storing per-appliance and predicted-aggregate values in Supabase. A lightweight
+storing per-appliance and actual-aggregate values in Supabase. A lightweight
 HTML + JavaScript frontend shows predicted consumption and estimated electricity
 cost in GBP (£). Drift detection and automatic retraining are built in.
 
 ## Stack
 - Language: Python 3.11
 - API: FastAPI + Uvicorn
-- Regression Models (Layer 1): Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression — all trained and evaluated, best R² saved as final model
-- Time Series Models (Layer 2): Chronos-Bolt (Small), MSTL, XGBoost with lag features — all trained and evaluated, best MAPE saved as final model
-- Data: pandas, numpy, scikit-learn (StandardScaler)
+- Time Series Models: Chronos-Bolt (Small), MSTL, XGBoost with lag features — all trained and evaluated, best MAPE saved as final model
+- Data: pandas, numpy, scikit-learn
 - Model persistence: joblib
 - Dataset: REFIT Smart Home Dataset — House 1 (data/raw/House1.csv, Oct 2013 – Jan 2014, 8-second intervals)
 - Frontend: HTML + JavaScript (no framework, no build step) + Tailwind CSS via CDN
@@ -33,9 +31,7 @@ cost in GBP (£). Drift detection and automatic retraining are built in.
 
 ## Environment variables
 ```
-MODEL_PATH_FULL=src/model/trained/model_full.joblib
 MODEL_PATH_FORECAST=src/model/trained/model_forecast.joblib
-SCALER_PATH=src/model/trained/scaler.joblib
 TEST_SPLIT_PATH=data/processed/test.csv
 API_HOST=0.0.0.0
 API_PORT=8000
@@ -46,24 +42,24 @@ ELECTRICITY_TARIFF_GBP_PER_KWH=0.34
 ```
 
 ## Spec documents (read before touching any file)
-- `docs/schema.md` â€” data schema, feature definitions, input/output shapes
-- `docs/api-contracts.md` â€” every route, request shape, response shape
-- `docs/architecture.md` â€” file structure, data flow, service boundaries
-- `docs/decisions.md` â€” why things are built the way they are
-- `docs/env.md` â€” environment variables reference
+- `docs/schema.md` — data schema, feature definitions, input/output shapes
+- `docs/api-contracts.md` — every route, request shape, response shape
+- `docs/architecture.md` — file structure, data flow, service boundaries
+- `docs/decisions.md` — why things are built the way they are
+- `docs/env.md` — environment variables reference
 
 ## Module map
 ```
 diagonally-energy-prediction/
 ├── data/
-│   ├── raw/                              # original UCI dataset (KAG_energydata_complete.csv)
+│   ├── raw/                              # original REFIT dataset (House1.csv)
 │   └── processed/                        # cleaned and engineered features + lag features
 ├── notebooks/                            # EDA, model comparison, feature importance
 ├── frontend/
 │   ├── index.html                        # landing page with tier selection
 │   ├── simple.html                       # Basic tier form and results
 │   ├── dashboard.html                    # Smart Home tier live dashboard
-│   ├── forecast.html                     # 7-day forecast and monthly bill projection
+│   ├── forecast.html                     # 7-day forecast and weekly bill projection
 │   └── assets/
 │       ├── style.css                     # custom styles
 │       └── app.js                        # API calls and UI logic
@@ -72,60 +68,39 @@ diagonally-energy-prediction/
 │   │   ├── main.py                       # FastAPI app entry point + APScheduler startup
 │   │   └── routes.py                     # all prediction and forecast endpoints
 │   ├── model/
-│   │   ├── train_full.py                 # train all 6 regression models on 25 features — save best R²
-│   │   ├── train_simple.py               # train all 6 regression models on 7 features — save best R²
-│   │   ├── train_forecast.py             # train all 5 time series models — save best MAPE
-│   │   ├── evaluate.py                   # compare all models, print leaderboard, return best
-│   │   ├── predict.py                    # load regression model singletons and run inference
+│   │   ├── train_forecast.py             # train all 3 time series models — save best MAPE
+│   │   ├── evaluate.py                   # write_leaderboard helper
 │   │   ├── forecast.py                   # load forecast model singleton and return predictions
 │   │   └── trained/
-│   │       ├── model_full.joblib         # best regression model on 25 features
-│   │       ├── model_simple.joblib       # best regression model on 7 features
 │   │       └── model_forecast.joblib     # best time series model
 │   └── services/
-│       ├── features.py                   # assemble feature dicts for both tiers + lag features
-│       ├── data_loader.py                # load and preprocess KAG_energydata_complete.csv
-│       ├── cost.py                       # Wh to NGN conversion + monthly bill projection
+│       ├── features.py                   # build_lag_matrix for forecast training
+│       ├── data_loader.py                # load and preprocess House1.csv
+│       ├── cost.py                       # Wh to GBP conversion + weekly bill projection
 │       ├── database.py                   # Supabase insert and retrieve predictions and forecasts
-│       ├── scheduler.py                  # APScheduler — auto-submit readings every 15 minutes
-│       ├── monitor.py                    # Z-Score anomaly detection on every incoming reading — flags if any feature Z > 3 std devs from training mean
-│       └── retrain_trigger.py            # checks 3 conditions every 100 readings: drift > 15%, clean rows > 2000, anomaly rate < 10% — triggers retraining when all 3 met
+│       ├── scheduler.py                  # APScheduler — replay test rows every 15 minutes
+│       ├── monitor.py                    # Z-Score anomaly detection on every incoming reading
+│       └── retrain_trigger.py            # checks 3 conditions every 100 readings: drift > 15%, clean rows > 2000, anomaly rate < 10%
 ├── tests/
 │   ├── test_api.py                       # endpoint tests for all routes
-│   ├── test_features.py                  # feature assembly and lag feature tests
-│   ├── test_model.py                     # regression model inference tests
+│   ├── test_features.py                  # lag feature tests
+│   ├── test_model.py                     # data loader and forecast model tests
 │   ├── test_forecast.py                  # time series forecast tests
-│   ├── test_evaluate.py                  # model comparison and leaderboard tests
+│   ├── test_evaluate.py                  # leaderboard tests
 │   ├── test_cost.py                      # cost calculation and bill projection tests
 │   ├── test_database.py                  # Supabase storage tests
 │   ├── test_monitor.py                   # Z-Score anomaly detection tests
 │   └── test_retrain_trigger.py           # retraining condition tests
 ├── scripts/
-│   ├── run_training_full.py              # train all regression models, save best for full tier
-│   ├── run_training_simple.py            # train all regression models, save best for simple tier
 │   ├── run_training_forecast.py          # train all time series models, save best forecast model
-│   └── run_retraining.py                 # manual retraining trigger — pulls clean rows from Supabase + UCI dataset, retrains all 6 models, saves best R²
+│   └── run_retraining.py                 # retraining trigger — fetches clean rows, retrains forecast model
 └── .github/workflows/
     └── ci.yml                            # run all tests on push to main
 ```
 
 ## ML conventions
 
-Layer 1 — Current Consumption (Regression):
-- Six models trained and evaluated: Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression
-- All six trained on MODEL_FEATURES (13 features) against aggregate_wh target
-- Train split: Oct 9 – Dec 15 2013. Test split: Dec 16 2013 – Jan 2 2014. Never shuffle.
-- Evaluation metric: R² score on held-out test split
-- Best R² model saved as model_full.joblib
-- MODEL_FEATURES: hour, day_of_week, month, is_weekend, is_night, is_peak_hour, lag_1, lag_6, lag_144, lag_1008, rolling_mean_6, rolling_mean_144, rolling_std_6
-- is_night = 1 if hour >= 22 or hour < 6 (UK hours)
-- is_peak_hour = 1 if 16 <= hour <= 20 (UK peak demand)
-- All MODEL_FEATURES StandardScaler-transformed; scaler saved as scaler.joblib
-- Never pull all rows into memory for prediction — accept feature dict, return float
-- All models loaded once at startup as global singletons — never reload per request
-- Retrain by running scripts/run_training_full.py — never retrain inside the API
-
-Layer 2 — Future Consumption (Time Series):
+Time Series Forecast:
 - Three models trained and evaluated: Chronos-Bolt (Small), MSTL, XGBoost with lag features
 - Evaluation metrics: MAE, RMSE, MAPE on held-out test split
 - Best MAPE model saved as model_forecast.joblib
@@ -137,12 +112,14 @@ Layer 2 — Future Consumption (Time Series):
 - forecast.py loads best model once at startup as a singleton
 - Retrain by running scripts/run_training_forecast.py — never retrain inside the API
 
-Layer 3 — Bill Estimation (No Model):
+Layer 2 — Bill Estimation (No Model):
 - Pure calculation — no ML model involved
-- Formula: projected_bill_gbp = sum(forecast_kwh) × ELECTRICITY_TARIFF_GBP_PER_KWH
-- Return optimistic (yhat_lower), pessimistic (yhat_upper) and most likely (yhat) bill projections
+- Formula: projected_week_bill = sum(7-day forecast_kwh) × ELECTRICITY_TARIFF_GBP_PER_KWH
+- No extrapolation — 7-day forecast covers exactly 7 days; result is the actual 7-day cost in GBP
+- Return optimistic (lower_wh), pessimistic (upper_wh) and most likely (predicted_wh) weekly bill projections
 - Always read tariff from ELECTRICITY_TARIFF_GBP_PER_KWH environment variable
 - Round all GBP values to 2 decimal places
+- Response key: projected_week_bill with fields: optimistic_gbp, most_likely_gbp, pessimistic_gbp, period ("7 days")
 
 ## Monitoring and retraining conventions
 
@@ -169,16 +146,16 @@ Retraining Trigger — 3 conditions must ALL be true:
 - Condition 1: Drift detected (at least one feature deviation > 15%)
 - Condition 2: At least 2000 clean rows accumulated in Supabase since drift was first flagged
 - Condition 3: Anomaly rate < 10% (clean rows / total rows > 90%)
-- When all 3 met: pull all clean rows from Supabase, combine with train split data, retrain all 6 models, evaluate on held-out set, save best R² model
-- If new model R² > old model R² → replace model
-- If new model R² < old model R² → keep old model
+- When all 3 met: pull all clean rows from Supabase, retrain all 3 forecast models, evaluate on held-out set, save best MAPE model
+- If new model MAPE < old model MAPE → replace model_forecast.joblib
+- If new model MAPE >= old model MAPE → keep old model
 - Log outcome to Supabase retrain_log table either way
 - Reset clean row counter and drift flag after retraining
 
 Supabase tables for monitoring:
 - anomalies: id, timestamp, features (JSONB), z_scores (JSONB), flagged_features, low_confidence_prediction
 - drift_log: id, timestamp, feature, training_mean, rolling_mean, deviation_pct
-- retrain_log: id, timestamp, trigger_reason, old_model_r2, new_model_r2, model_replaced (bool), rows_used
+- retrain_log: id, timestamp, trigger_reason, old_mape, new_mape, model_replaced (bool), rows_used
 
 ## Database conventions
 - Always use supabase-py client — never raw psycopg2
@@ -202,9 +179,10 @@ Supabase tables for monitoring:
 ## Scheduler conventions
 - APScheduler runs as a background service inside the FastAPI app
 - Interval: every 15 minutes
-- On each tick: get next row from test.csv (Dec 16 – Jan 2) → scale features → call predict_full → store result + per-appliance actuals in Supabase
+- On each tick: get next row from test.csv (Dec 16 – Jan 2) → use actual aggregate_wh as predicted_wh → store result + per-appliance actuals in Supabase
 - If Supabase write fails: log the error, skip the tick, do not crash
 - Scheduler replays test split rows chronologically (cycling); no sensor env vars needed
+- No model inference on the scheduler tick — predicted_wh comes directly from aggregate_wh column
 
 ## Frontend conventions
 - Pure HTML + JavaScript — no React, no Vue, no build step
@@ -212,7 +190,7 @@ Supabase tables for monitoring:
 - index.html — landing page with tier selection
 - simple.html — Basic tier form: lights input + T1 input + location input
 - dashboard.html — Smart Home tier: shows live auto-updating predictions every 15 minutes
-- forecast.html — 7-day forecast and monthly bill projection
+- forecast.html — 7-day forecast and weekly bill projection
 - app.js makes fetch() calls to the FastAPI API — no direct Supabase calls from frontend
 - All API responses display: predicted Wh, predicted kWh, estimated cost in GBP (£)
 - Frontend must be responsive — works on mobile and desktop
@@ -225,7 +203,7 @@ Supabase tables for monitoring:
 - Feature columns: snake_case
 
 ## Error handling
-- Raise HTTPException with correct status code â€” nothing else
+- Raise HTTPException with correct status code — nothing else
 - 400 bad input, 422 validation error, 500 model error
 - Never catch exceptions silently
 - Never return 200 with an error in the body
@@ -233,7 +211,7 @@ Supabase tables for monitoring:
 ## TDD rules
 - Write the failing test first. Confirm it fails. Then implement.
 - Every function that transforms data or calls the model has a test
-- A test that passes before implementation exists is wrong â€” fix the test
+- A test that passes before implementation exists is wrong — fix the test
 
 ## Coding standards
 - Minimum code that solves the problem. Nothing speculative.
@@ -246,6 +224,6 @@ Supabase tables for monitoring:
 
 ## Communication style
 - State assumptions before implementing
-- If multiple interpretations exist, present them â€” do not pick silently
+- If multiple interpretations exist, present them — do not pick silently
 - If something is unclear, stop and ask
 - Surface tradeoffs before choosing an approach
