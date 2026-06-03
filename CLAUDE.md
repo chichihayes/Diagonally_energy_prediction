@@ -10,10 +10,10 @@ October 9 – January 2 2014.
 The system trains a time series forecast model (Chronos-Bolt, MSTL, or XGBoost with
 lags) to predict future consumption over 24 hours and 7 days.
 
-A scheduler replays the test split (Dec 16 – Jan 2 2014) rows every 15 minutes,
-storing per-appliance and actual-aggregate values in Supabase. A lightweight
-HTML + JavaScript frontend shows predicted consumption and estimated electricity
-cost in GBP (£). Drift detection and automatic retraining are built in.
+Actual sensor readings are seeded from the test split into Supabase with per-appliance
+values and estimated electricity cost in GBP (£). Anomaly detection runs on every
+reading to flag unusual appliance consumption. A lightweight HTML + JavaScript frontend
+shows forecast consumption and estimated electricity cost in GBP (£).
 
 ## Stack
 - Language: Python 3.11
@@ -23,8 +23,7 @@ cost in GBP (£). Drift detection and automatic retraining are built in.
 - Model persistence: joblib
 - Dataset: REFIT Smart Home Dataset — House 1 (data/raw/House1.csv, Oct 2013 – Jan 2014, 8-second intervals)
 - Frontend: HTML + JavaScript (no framework, no build step) + Tailwind CSS via CDN
-- Database: Supabase (Postgres) — stores per-appliance predictions, forecasts, drift logs
-- Scheduler: APScheduler — replays test split rows every 15 minutes
+- Database: Supabase (Postgres) — stores actual appliance readings, anomaly events, forecasts
 - Cost calculation: Ofgem UK tariff rate (GBP) applied to predicted kWh
 - Testing: pytest + httpx
 - CI: GitHub Actions
@@ -63,37 +62,31 @@ diagonally-energy-prediction/
 │       └── app.js                        # API calls and UI logic
 ├── src/
 │   ├── api/
-│   │   ├── main.py                       # FastAPI app entry point + APScheduler startup
-│   │   └── routes.py                     # all prediction and forecast endpoints
+│   │   ├── main.py                       # FastAPI app entry point
+│   │   └── routes.py                     # readings and forecast endpoints
 │   ├── model/
 │   │   ├── train_forecast.py             # train all 3 time series models — save best MAPE
-│   │   ├── evaluate.py                   # write_leaderboard helper
 │   │   ├── forecast.py                   # load forecast model singleton and return predictions
 │   │   └── trained/
 │   │       ├── model_forecast.joblib     # best time series model (gitignored)
 │   │       ├── forecast_leaderboard.json # MAPE/MAE/RMSE for all 3 trained models
-│   │       └── training_stats.json       # per-feature mean + std from train split
+│   │       └── training_stats.json       # appliance mean + std from train split
 │   └── services/
 │       ├── features.py                   # build_lag_matrix for forecast training
 │       ├── data_loader.py                # load and preprocess House1.csv
 │       ├── cost.py                       # Wh to GBP conversion + weekly bill projection
-│       ├── database.py                   # Supabase insert and retrieve predictions and forecasts
-│       ├── scheduler.py                  # APScheduler — replay test rows every 15 minutes
-│       ├── monitor.py                    # Z-Score anomaly detection on every incoming reading
-│       └── retrain_trigger.py            # checks 3 conditions every 100 readings: drift > 15%, clean rows > 2000, anomaly rate < 10%
+│       ├── database.py                   # Supabase insert and retrieve readings and forecasts
+│       └── monitor.py                    # Z-Score anomaly detection on appliance values
 ├── tests/
 │   ├── test_api.py                       # endpoint tests for all routes
 │   ├── test_features.py                  # lag feature tests
-│   ├── test_model.py                     # data loader and forecast model tests
 │   ├── test_forecast.py                  # time series forecast tests
-│   ├── test_evaluate.py                  # leaderboard tests
 │   ├── test_cost.py                      # cost calculation and bill projection tests
 │   ├── test_database.py                  # Supabase storage tests
-│   ├── test_monitor.py                   # Z-Score anomaly detection tests
-│   └── test_retrain_trigger.py           # retraining condition tests
+│   └── test_monitor.py                   # Z-Score anomaly detection tests
 ├── scripts/
 │   ├── run_training_forecast.py          # train all time series models, save best forecast model
-│   └── run_retraining.py                 # retraining trigger — fetches clean rows, retrains forecast model
+│   └── seed_supabase.py                  # seed readings + anomalies from test split into Supabase
 └── .github/workflows/
     └── ci.yml                            # run all tests on push to main
 ```
@@ -121,52 +114,31 @@ Layer 2 — Bill Estimation (No Model):
 - Round all GBP values to 2 decimal places
 - Response key: projected_week_bill with fields: optimistic_gbp, most_likely_gbp, pessimistic_gbp, period ("7 days")
 
-## Monitoring and retraining conventions
+## Monitoring conventions
 
-Anomaly Detection — Z-Score (every 15 min reading):
+Anomaly Detection — Z-Score (on every reading):
 - Formula: Z = (new_value - training_mean) / training_std
-- Training mean and std calculated once from train split and saved in src/model/trained/training_stats.json
-- Check all 13 MODEL_FEATURES on every incoming reading
-- Z > 3 on ANY feature → reading flagged as anomaly
-- Anomalous readings stored in Supabase anomalies table with anomaly=True
-- Prediction still made but marked low_confidence=True
-- Anomalous readings NOT counted toward clean row pool
-- Never use anomalous readings for retraining
-
-Drift Detection — Rolling Mean Deviation (every 100 clean readings):
-- Formula: deviation = |rolling_mean - training_mean| / training_mean × 100
-- training_mean is fixed from train split — never changes
-- rolling_mean is mean of last 100 clean readings for each feature
-- Check all 13 MODEL_FEATURES
-- Any feature deviation > 15% → drift flagged
-- Drift flagged → log to Supabase drift_log table
-- Drift flagged → start counting toward retraining threshold
-
-Retraining Trigger — 3 conditions must ALL be true:
-- Condition 1: Drift detected (at least one feature deviation > 15%)
-- Condition 2: At least 2000 clean rows accumulated in Supabase since drift was first flagged
-- Condition 3: Anomaly rate < 10% (clean rows / total rows > 90%)
-- When all 3 met: pull all clean rows from Supabase, retrain all 3 forecast models, evaluate on held-out set, save best MAPE model
-- If new model MAPE < old model MAPE → replace model_forecast.joblib
-- If new model MAPE >= old model MAPE → keep old model
-- Log outcome to Supabase retrain_log table either way
-- Reset clean row counter and drift flag after retraining
+- Training mean and std calculated once from train split and saved as appliance_stats in training_stats.json
+- Check all 9 appliances plus aggregate_wh on every reading
+- |Z| > 3 on ANY appliance → reading flagged as anomaly
+- Anomalous readings stored in Supabase anomalies table
+- All readings stored in readings table regardless of anomaly status
+- Z > 0 → direction HIGH ("consuming more than normal")
+- Z < 0 → direction LOW ("consuming less than normal")
+- appliance_stats structure: {"Fridge": {"mean": float, "std": float}, ...}
+- overnight_thresholds also stored in training_stats.json for the 6 active appliances
 
 Supabase tables for monitoring:
-- anomalies: id, timestamp, features (JSONB — MODEL_FEATURES dict), z_scores (JSONB), flagged_features (text[])
-- drift_log: id, timestamp, drift_detected (bool), drifted_features (text[]), deviations (JSONB — feature→pct), clean_row_count (int)
-- retrain_log: id, timestamp, trigger_reason, old_mape, new_mape, model_replaced (bool), rows_used
+- anomalies: id, timestamp, appliance_values (JSONB), z_scores (JSONB), flagged_appliances (JSONB)
 
 ## Database conventions
 - Always use supabase-py client — never raw psycopg2
-- DB reads: supabase.table('predictions').select('*').execute()
-- DB writes: supabase.table('predictions').insert({}).execute()
+- DB reads: supabase.table('readings').select('*').execute()
+- DB writes: supabase.table('readings').insert({}).execute()
 - RLS enabled on all tables — every request must pass the correct key
-- predictions table stores: id, created_at, tier, input_features (JSON),
-  predicted_wh, predicted_kwh, estimated_cost_gbp, aggregate_wh,
-  fridge_wh, chest_freezer_wh, upright_freezer_wh, tumble_dryer_wh,
-  washing_machine_wh, dishwasher_wh, computer_wh, television_wh,
-  electric_heater_wh, low_confidence (bool), anomaly (bool)
+- readings table stores: id, timestamp, aggregate_wh, fridge_wh, chest_freezer_wh,
+  upright_freezer_wh, tumble_dryer_wh, washing_machine_wh, dishwasher_wh,
+  computer_wh, television_wh, electric_heater_wh, estimated_cost_gbp
 - Never store raw model files or training data in Supabase
 
 ## Cost calculation conventions
@@ -175,14 +147,6 @@ Supabase tables for monitoring:
 - Never hardcode the tariff rate inside any function — always read from env
 - Formula: estimated_cost_gbp = predicted_kwh * ELECTRICITY_TARIFF_GBP_PER_KWH
 - Round cost to 2 decimal places before returning in API response
-
-## Scheduler conventions
-- APScheduler runs as a background service inside the FastAPI app
-- Interval: every 15 minutes
-- On each tick: get next row from test.csv (Dec 16 – Jan 2) → use actual aggregate_wh as predicted_wh → store result + per-appliance actuals in Supabase
-- If Supabase write fails: log the error, skip the tick, do not crash
-- Scheduler replays test split rows chronologically (cycling); no sensor env vars needed
-- No model inference on the scheduler tick — predicted_wh comes directly from aggregate_wh column
 
 ## Frontend conventions
 - Pure HTML + JavaScript — no React, no Vue, no build step

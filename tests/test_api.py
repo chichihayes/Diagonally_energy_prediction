@@ -4,106 +4,59 @@ from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 
 
-def test_get_predictions_returns_200(client, mock_get_predictions):
-    mock_get_predictions.return_value = []
-    response = client.get("/api/v1/predictions")
+def test_get_readings_returns_200(client, mock_get_readings):
+    mock_get_readings.return_value = []
+    response = client.get("/api/v1/readings")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
 
-def test_get_predictions_tier_filter(client, mock_get_predictions):
-    mock_get_predictions.return_value = [
-        {"id": "a", "tier": "full", "predicted_wh": 60.0, "predicted_kwh": 0.06,
-         "estimated_cost_gbp": 0.02, "created_at": "2013-12-16T10:00:00Z"}
-    ]
-    response = client.get("/api/v1/predictions?tier=full")
+def test_get_readings_limit_param(client, mock_get_readings):
+    mock_get_readings.return_value = []
+    response = client.get("/api/v1/readings?limit=5")
     assert response.status_code == 200
-    mock_get_predictions.assert_called_once_with(tier="full", limit=20, since=None)
+    mock_get_readings.assert_called_once_with(limit=5, since=None)
 
 
-def test_get_predictions_limit_param(client, mock_get_predictions):
-    mock_get_predictions.return_value = []
-    response = client.get("/api/v1/predictions?limit=5")
-    assert response.status_code == 200
-    mock_get_predictions.assert_called_once_with(tier=None, limit=5, since=None)
-
-
-def test_get_predictions_limit_max_50(client, mock_get_predictions):
-    mock_get_predictions.return_value = []
-    response = client.get("/api/v1/predictions?limit=100")
+def test_get_readings_limit_max_50(client, mock_get_readings):
+    mock_get_readings.return_value = []
+    response = client.get("/api/v1/readings?limit=100")
     assert response.status_code == 422
 
 
-def test_get_predictions_response_shape(client, mock_get_predictions):
-    mock_get_predictions.return_value = [
-        {"id": "uuid-1", "tier": "full", "predicted_wh": 60.5,
-         "predicted_kwh": 0.0605, "estimated_cost_gbp": 0.02,
-         "created_at": "2013-12-16T10:00:00Z"}
+def test_get_readings_response_shape(client, mock_get_readings):
+    mock_get_readings.return_value = [
+        {
+            "timestamp": "2013-12-16T10:00:00",
+            "aggregate_wh": 523.1,
+            "fridge_wh": 74.2,
+            "estimated_cost_gbp": 0.18,
+        }
     ]
-    response = client.get("/api/v1/predictions")
+    response = client.get("/api/v1/readings")
     item = response.json()[0]
-    assert "predicted_wh" in item
+    assert "aggregate_wh" in item
     assert "estimated_cost_gbp" in item
-    assert "estimated_cost_ngn" not in item
 
 
-@pytest.fixture
-def seed_full_prediction(monkeypatch):
-    row = {
-        "id": "abc-123",
-        "tier": "full",
-        "predicted_wh": 84.3,
-        "predicted_kwh": 0.0843,
-        "estimated_cost_gbp": 0.03,
-        "created_at": "2013-12-16T10:00:00Z",
-        "input_features": {
-            "hour": 10, "day_of_week": 0, "month": 12,
-            "is_weekend": 0, "is_night": 0, "is_peak_hour": 0,
-            "lag_1": 80.0, "lag_6": 75.0, "lag_144": 82.0, "lag_1008": 78.0,
-            "rolling_mean_6": 79.0, "rolling_mean_144": 80.5, "rolling_std_6": 3.2,
-        },
-    }
-    mock_client = MagicMock()
-    chain = MagicMock()
-    chain.select.return_value = chain
-    chain.order.return_value = chain
-    chain.limit.return_value = chain
-    chain.eq.return_value = chain
-    chain.execute.return_value = MagicMock(data=[row])
-    mock_client.table.return_value = chain
-    monkeypatch.setattr("src.services.database.supabase", mock_client)
-    return row
-
-
-def test_get_predictions_full_tier_includes_input_features(client, seed_full_prediction):
-    resp = client.get("/api/v1/predictions?tier=full&limit=1")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body) == 1
-    record = body[0]
-    assert "input_features" in record
-    assert "lag_1" in record["input_features"]
-    assert "hour" in record["input_features"]
-
-
-def test_get_predictions_since_forwarded(client, mock_get_predictions):
-    mock_get_predictions.return_value = []
-    response = client.get("/api/v1/predictions?since=2013-12-16T10%3A00%3A00Z")
+def test_get_readings_since_forwarded(client, mock_get_readings):
+    mock_get_readings.return_value = []
+    response = client.get("/api/v1/readings?since=2013-12-16T10%3A00%3A00Z")
     assert response.status_code == 200
-    mock_get_predictions.assert_called_once_with(
-        tier=None, limit=20, since="2013-12-16T10:00:00+00:00"
+    mock_get_readings.assert_called_once_with(
+        limit=20, since="2013-12-16T10:00:00+00:00"
     )
 
 
-def test_get_predictions_since_default_none(client, mock_get_predictions):
-    mock_get_predictions.return_value = []
-    response = client.get("/api/v1/predictions")
+def test_get_readings_since_default_none(client, mock_get_readings):
+    mock_get_readings.return_value = []
+    response = client.get("/api/v1/readings")
     assert response.status_code == 200
-    mock_get_predictions.assert_called_once_with(tier=None, limit=20, since=None)
+    mock_get_readings.assert_called_once_with(limit=20, since=None)
 
 
-def test_get_predictions_invalid_since_returns_422(client):
-    response = client.get("/api/v1/predictions?since=not-a-date")
+def test_get_readings_invalid_since_returns_422(client):
+    response = client.get("/api/v1/readings?since=not-a-date")
     assert response.status_code == 422
 
 
@@ -337,36 +290,3 @@ def test_get_leaderboard_returns_503_when_leaderboard_file_absent(tmp_path):
 
     assert response.status_code == 503
     assert "run training scripts" in response.json()["detail"].lower()
-
-
-# ── GET /api/v1/monitor/drift ─────────────────────────────────────────────────
-
-def test_get_monitor_drift_returns_200_with_latest_event(client):
-    mock_event = {
-        "timestamp": "2013-12-16T10:00:00Z",
-        "drift_detected": True,
-        "drifted_features": ["lag_1"],
-        "deviations": {"lag_1": 20.5},
-        "clean_row_count": 100,
-    }
-    with patch("src.api.routes.database.get_latest_drift_event", return_value=mock_event):
-        response = client.get("/api/v1/monitor/drift")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["drift_detected"] is True
-    assert body["drifted_features"] == ["lag_1"]
-    assert body["deviations"]["lag_1"] == 20.5
-    assert body["clean_row_count"] == 100
-
-
-def test_get_monitor_drift_returns_404_when_no_data(client):
-    with patch("src.api.routes.database.get_latest_drift_event", return_value=None):
-        response = client.get("/api/v1/monitor/drift")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "No drift check has been run yet"
-
-
-def test_get_monitor_drift_returns_500_on_db_error(client):
-    with patch("src.api.routes.database.get_latest_drift_event", side_effect=Exception("db connection failed")):
-        response = client.get("/api/v1/monitor/drift")
-    assert response.status_code == 500

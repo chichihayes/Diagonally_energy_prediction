@@ -12,4 +12,3 @@ statsforecast
 chronos-forecasting
 torch
 supabase
-apscheduler

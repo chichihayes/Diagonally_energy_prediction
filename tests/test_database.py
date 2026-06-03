@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 @pytest.fixture
 def db_chain():
-    """Returns a mock that simulates Supabase's builder chain."""
     chain = MagicMock()
     chain.select.return_value = chain
     chain.order.return_value = chain
@@ -23,198 +22,62 @@ def mock_supabase(db_chain):
         yield db_chain
 
 
-def test_get_predictions_returns_list(mock_supabase):
-    from src.services.database import get_predictions
-
-    result = get_predictions()
+def test_get_readings_returns_list(mock_supabase):
+    from src.services.database import get_readings
+    result = get_readings()
     assert isinstance(result, list)
 
 
-def test_get_predictions_filters_by_tier(mock_supabase):
-    from src.services.database import get_predictions
-
-    mock_supabase.execute.return_value = MagicMock(
-        data=[
-            {
-                "id": "a",
-                "tier": "simple",
-                "predicted_wh": 60.0,
-                "predicted_kwh": 0.06,
-                "estimated_cost_ngn": 4.08,
-                "location": "Lagos",
-                "created_at": "2026-06-01T10:00:00Z",
-            }
-        ]
-    )
-
-    result = get_predictions(tier="simple")
-
-    mock_supabase.eq.assert_called_once_with("tier", "simple")
-    assert all(row["tier"] == "simple" for row in result)
+def test_get_readings_respects_limit(mock_supabase):
+    from src.services.database import get_readings
+    get_readings(limit=5)
+    mock_supabase.limit.assert_called_once_with(5)
 
 
-def test_get_predictions_respects_limit(mock_supabase):
-    from src.services.database import get_predictions
-
-    rows = [
-        {
-            "id": str(i),
-            "tier": "full",
-            "predicted_wh": 80.0,
-            "predicted_kwh": 0.08,
-            "estimated_cost_ngn": 5.44,
-            "location": "Abuja",
-            "created_at": f"2026-06-01T0{i}:00:00Z",
-        }
-        for i in range(5)
-    ]
-    mock_supabase.execute.return_value = MagicMock(data=rows[:3])
-
-    result = get_predictions(limit=3)
-
-    mock_supabase.limit.assert_called_once_with(3)
-    assert len(result) <= 3
-
-
-def test_get_predictions_default_limit_is_10(mock_supabase):
-    from src.services.database import get_predictions
-
-    get_predictions()
-
+def test_get_readings_default_limit_is_10(mock_supabase):
+    from src.services.database import get_readings
+    get_readings()
     mock_supabase.limit.assert_called_once_with(10)
 
 
-def test_insert_prediction_calls_supabase_insert():
-    from unittest.mock import MagicMock, patch
-    from src.services.database import insert_prediction
-
-    mock_client = MagicMock()
-    mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
-    with patch("src.services.database.supabase", mock_client):
-        insert_prediction({
-            "tier": "simple",
-            "predicted_wh": 60.5,
-            "predicted_kwh": 0.0605,
-            "estimated_cost_ngn": 4.11,
-            "location": "Lagos",
-            "input_features": {"lights": 0, "T1": 19.89},
-        })
-    mock_client.table.assert_called_once_with("predictions")
-    mock_client.table.return_value.insert.assert_called_once()
+def test_get_readings_since_applies_gte(mock_supabase):
+    from src.services.database import get_readings
+    get_readings(since="2013-12-16T10:00:00Z")
+    mock_supabase.gte.assert_called_once_with("timestamp", "2013-12-16T10:00:00Z")
 
 
-def test_get_predictions_since_applies_gte(mock_supabase):
-    from src.services.database import get_predictions
-
-    get_predictions(since="2026-05-31T10:00:00Z")
-    mock_supabase.gte.assert_called_once_with("created_at", "2026-05-31T10:00:00Z")
-
-
-def test_get_predictions_no_gte_when_since_is_none(mock_supabase):
-    from src.services.database import get_predictions
-
-    get_predictions(since=None)
+def test_get_readings_no_gte_when_since_is_none(mock_supabase):
+    from src.services.database import get_readings
+    get_readings(since=None)
     mock_supabase.gte.assert_not_called()
 
 
-# --- drift_log tests ---
-
-def test_store_drift_event_calls_supabase_insert():
-    from unittest.mock import MagicMock, patch
-    from src.services.database import store_drift_event
-
+def test_insert_reading_calls_supabase_insert():
+    from src.services.database import insert_reading
     mock_client = MagicMock()
     mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
     with patch("src.services.database.supabase", mock_client):
-        store_drift_event({
-            "timestamp": "2026-06-01T10:00:00Z",
-            "drift_detected": True,
-            "drifted_features": ["T1"],
-            "deviations": {"T1": 20.0},
-            "clean_row_count": 100,
+        insert_reading({
+            "timestamp": "2013-12-16T10:00:00",
+            "aggregate_wh": 523.1,
+            "fridge_wh": 74.2,
+            "estimated_cost_gbp": 0.18,
         })
-    mock_client.table.assert_called_once_with("drift_log")
-    call_args = mock_client.table.return_value.insert.call_args[0][0]
-    assert call_args["drift_detected"] is True
-    assert call_args["drifted_features"] == ["T1"]
-
-
-def test_store_drift_event_inserts_even_when_no_drift():
-    from unittest.mock import MagicMock, patch
-    from src.services.database import store_drift_event
-
-    mock_client = MagicMock()
-    mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
-    with patch("src.services.database.supabase", mock_client):
-        store_drift_event({
-            "timestamp": "2026-06-01T10:00:00Z",
-            "drift_detected": False,
-            "drifted_features": [],
-            "deviations": {},
-            "clean_row_count": 100,
-        })
+    mock_client.table.assert_called_once_with("readings")
     mock_client.table.return_value.insert.assert_called_once()
 
 
-def test_get_latest_drift_event_returns_most_recent_row():
-    from unittest.mock import MagicMock, patch
-    from src.services.database import get_latest_drift_event
-
-    row = {
-        "id": "abc",
-        "timestamp": "2026-06-01T10:00:00Z",
-        "drift_detected": True,
-        "drifted_features": ["T1"],
-        "deviations": {"T1": 20.0},
-        "clean_row_count": 100,
-    }
-    mock_client = MagicMock()
-    chain = mock_client.table.return_value
-    chain.select.return_value = chain
-    chain.order.return_value = chain
-    chain.limit.return_value = chain
-    chain.execute.return_value = MagicMock(data=[row])
-    with patch("src.services.database.supabase", mock_client):
-        result = get_latest_drift_event()
-    assert result == row
-
-
-def test_get_latest_drift_event_returns_none_when_empty():
-    from unittest.mock import MagicMock, patch
-    from src.services.database import get_latest_drift_event
-
-    mock_client = MagicMock()
-    chain = mock_client.table.return_value
-    chain.select.return_value = chain
-    chain.order.return_value = chain
-    chain.limit.return_value = chain
-    chain.execute.return_value = MagicMock(data=[])
-    with patch("src.services.database.supabase", mock_client):
-        result = get_latest_drift_event()
-    assert result is None
-
-
 def test_store_anomaly_calls_supabase_insert():
-    from unittest.mock import MagicMock, patch
     from src.services.database import store_anomaly
-
     record = {
-        "timestamp": "2026-06-01T10:00:00Z",
-        "tier": "full",
-        "input_features": {"T1": 999.0, "lights": 0},
-        "z_scores": {"T1": 30.1},
-        "flagged_features": ["T1"],
-        "low_confidence_prediction": True,
+        "timestamp": "2013-12-16T10:00:00",
+        "appliance_values": {"Fridge": 5.0},
+        "z_scores": {"Fridge": -4.52},
+        "flagged_appliances": [{"appliance": "Fridge", "direction": "LOW"}],
     }
-
-    mock_execute = MagicMock()
-    mock_insert = MagicMock(return_value=MagicMock(execute=mock_execute))
-    mock_table = MagicMock(return_value=MagicMock(insert=mock_insert))
-
-    with patch("src.services.database.supabase") as mock_client:
-        mock_client.table = mock_table
+    mock_client = MagicMock()
+    mock_client.table.return_value.insert.return_value.execute.return_value = MagicMock()
+    with patch("src.services.database.supabase", mock_client):
         store_anomaly(record)
-
-    mock_table.assert_called_once_with("anomalies")
-    mock_insert.assert_called_once_with(record)
-    mock_execute.assert_called_once()
+    mock_client.table.assert_called_once_with("anomalies")
+    mock_client.table.return_value.insert.assert_called_once_with(record)

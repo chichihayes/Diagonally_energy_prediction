@@ -27,6 +27,11 @@ MODEL_FEATURES = [
     "rolling_mean_6", "rolling_mean_144", "rolling_std_6",
 ]
 
+_OVERNIGHT_APPLIANCES = [
+    "TumbleDryer", "WashingMachine", "Dishwasher",
+    "Computer", "Television", "ElectricHeater",
+]
+
 
 def _cap_outliers_iqr(df: pd.DataFrame, cols: list) -> pd.DataFrame:
     for col in cols:
@@ -38,7 +43,6 @@ def _cap_outliers_iqr(df: pd.DataFrame, cols: list) -> pd.DataFrame:
 
 
 def load_house1_csv() -> pd.DataFrame:
-    """Load raw House1.csv, rename appliances, drop Unix, return datetime-indexed df."""
     df = pd.read_csv(_CSV_PATH)
     df["datetime"] = pd.to_datetime(df["Unix"], unit="s", utc=True).dt.tz_convert("Europe/London").dt.tz_localize(None)
     df = df.set_index("datetime")
@@ -49,51 +53,31 @@ def load_house1_csv() -> pd.DataFrame:
 
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-    """Full preprocessing pipeline: resample, clean, engineer features."""
-    # Resample 8-second intervals to 10-minute intervals
     df = df.resample("10min").mean()
-
-    # Replace negative values with 0
     df = df.clip(lower=0)
-
-    # Cap outliers per appliance using IQR
     present = [c for c in APPLIANCE_COLS if c in df.columns]
     df = _cap_outliers_iqr(df, present)
-
-    # Interpolate missing values for short gaps (up to 1 hour = 6 intervals)
     df = df.interpolate(method="time", limit=6)
-
-    # Drop rows where gap exceeds 1 hour (still NaN after interpolation)
     df = df.dropna()
-
-    # Aggregate
     df["aggregate_wh"] = df[present].sum(axis=1)
-
-    # Time features (UK hours)
     df["hour"] = df.index.hour
     df["day_of_week"] = df.index.dayofweek
     df["month"] = df.index.month
     df["is_weekend"] = (df.index.dayofweek >= 5).astype(int)
     df["is_night"] = ((df.index.hour >= 22) | (df.index.hour < 6)).astype(int)
     df["is_peak_hour"] = ((df.index.hour >= 16) & (df.index.hour <= 20)).astype(int)
-
-    # Lag features on aggregate_wh
     agg = df["aggregate_wh"]
     df["lag_1"] = agg.shift(1)
     df["lag_6"] = agg.shift(6)
     df["lag_144"] = agg.shift(144)
     df["lag_1008"] = agg.shift(1008)
-
-    # Rolling features
     df["rolling_mean_6"] = agg.shift(1).rolling(6).mean()
     df["rolling_mean_144"] = agg.shift(1).rolling(144).mean()
     df["rolling_std_6"] = agg.shift(1).rolling(6).std()
-
     return df.dropna()
 
 
 def load_and_split() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load House1.csv, run full preprocessing, chronological split, save artifacts."""
     raw = load_house1_csv()
     df = preprocess(raw)
 
@@ -102,9 +86,24 @@ def load_and_split() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     os.makedirs("src/model/trained", exist_ok=True)
 
+    stat_cols = APPLIANCE_COLS + ["aggregate_wh"]
+    appliance_stats = {
+        col: {"mean": float(train[col].mean()), "std": float(train[col].std())}
+        for col in stat_cols
+        if col in train.columns
+    }
+
+    overnight_mask = (train.index.hour >= 22) | (train.index.hour < 6)
+    overnight = train[overnight_mask]
+    overnight_thresholds = {
+        col: float(overnight[col].mean() + 2 * overnight[col].std())
+        for col in _OVERNIGHT_APPLIANCES
+        if col in train.columns
+    }
+
     stats = {
-        feat: {"mean": float(train[feat].mean()), "std": float(train[feat].std())}
-        for feat in MODEL_FEATURES
+        "appliance_stats": appliance_stats,
+        "overnight_thresholds": overnight_thresholds,
     }
     with open("src/model/trained/training_stats.json", "w") as f:
         json.dump(stats, f, indent=2)

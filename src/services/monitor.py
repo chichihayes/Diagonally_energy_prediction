@@ -2,39 +2,52 @@ import json
 import os
 
 _STATS_PATH = "src/model/trained/training_stats.json"
-_training_stats = None
+_stats = None
 
 
 def _load_stats() -> dict:
-    global _training_stats
-    if _training_stats is None:
+    global _stats
+    if _stats is None:
         if not os.path.exists(_STATS_PATH):
             raise FileNotFoundError(
                 f"training_stats.json not found at {_STATS_PATH}. "
-                f"Run load_and_split() to generate it."
+                f"Run load_and_split() first."
             )
         with open(_STATS_PATH) as f:
-            _training_stats = json.load(f)
-    return _training_stats
+            _stats = json.load(f)
+    return _stats["appliance_stats"]
 
 
-def check_anomaly(features: dict) -> dict:
+def check_anomaly(appliance_values: dict) -> dict:
     stats = _load_stats()
     z_scores = {}
-    flagged = []
-    for feat, value in features.items():
-        if feat not in stats:
+    flagged_appliances = []
+
+    for appliance, value in appliance_values.items():
+        if appliance not in stats:
             continue
-        mean = stats[feat]["mean"]
-        std = stats[feat]["std"]
+        mean = stats[appliance]["mean"]
+        std = stats[appliance]["std"]
         if std == 0:
             continue
         z = (value - mean) / std
-        z_scores[feat] = round(z, 4)
+        z_scores[appliance] = round(z, 4)
         if abs(z) > 3:
-            flagged.append(feat)
+            direction = "HIGH" if z > 0 else "LOW"
+            meaning = (
+                "consuming more than normal"
+                if direction == "HIGH"
+                else "consuming less than normal"
+            )
+            flagged_appliances.append({
+                "appliance": appliance,
+                "z_score": round(z, 4),
+                "direction": direction,
+                "meaning": meaning,
+            })
+
     return {
-        "is_anomaly": len(flagged) > 0,
+        "is_anomaly": len(flagged_appliances) > 0,
         "z_scores": z_scores,
-        "flagged_features": flagged,
+        "flagged_appliances": flagged_appliances,
     }

@@ -5,12 +5,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.services.data_loader import MODEL_FEATURES
+_APPLIANCE_COLS = [
+    "Fridge", "ChestFreezer", "UprightFreezer", "TumbleDryer",
+    "WashingMachine", "Dishwasher", "Computer", "Television",
+    "ElectricHeater", "aggregate_wh",
+]
 
-_MOCK_TRAINING_STATS = {feat: {"mean": 5.0, "std": 2.0} for feat in MODEL_FEATURES}
+_MOCK_TRAINING_STATS = {
+    "appliance_stats": {col: {"mean": 100.0, "std": 20.0} for col in _APPLIANCE_COLS},
+    "overnight_thresholds": {
+        "TumbleDryer": 50.0, "WashingMachine": 100.0, "Dishwasher": 60.0,
+        "Computer": 30.0, "Television": 40.0, "ElectricHeater": 100.0,
+    },
+}
 
-# Ensure trained/ directory and training_stats.json exist before importing
-# monitor.py and retrain_trigger.py so their module-level open() does not raise.
 _STATS_PATH = os.path.join("src", "model", "trained", "training_stats.json")
 os.makedirs(os.path.dirname(_STATS_PATH), exist_ok=True)
 with open(_STATS_PATH, "w") as _f:
@@ -29,6 +37,6 @@ def client():
 
 
 @pytest.fixture
-def mock_get_predictions():
-    with patch("src.services.database.get_predictions") as mock:
+def mock_get_readings():
+    with patch("src.services.database.get_readings") as mock:
         yield mock

@@ -5,21 +5,19 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.services import database
 from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
-from src.services.database import supabase
 
 router = APIRouter(prefix="/api/v1")
 
 _FORECAST_LEADERBOARD_PATH = pathlib.Path("src/model/trained/forecast_leaderboard.json")
 
 
-@router.get("/predictions")
-def get_predictions_route(
-    tier: str | None = Query(default=None),
+@router.get("/readings")
+def get_readings_route(
     limit: int = Query(default=20, ge=1, le=50),
     since: datetime | None = Query(default=None),
 ):
     since_str = since.isoformat() if since is not None else None
-    return database.get_predictions(tier=tier, limit=limit, since=since_str)
+    return database.get_readings(limit=limit, since=since_str)
 
 
 @router.get("/models/leaderboard")
@@ -69,31 +67,3 @@ def get_forecast_7d():
         "lowest_day": result["lowest_day"],
         "projected_week_bill": result["projected_week_bill"],
     }
-
-
-@router.get("/monitor/drift")
-def get_drift_status():
-    try:
-        event = database.get_latest_drift_event()
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to retrieve drift status")
-    if event is None:
-        raise HTTPException(status_code=404, detail="No drift check has been run yet")
-    return event
-
-
-@router.get("/monitor/retrain")
-def get_retrain_status():
-    try:
-        result = (
-            supabase.table("retrain_log")
-            .select("timestamp,old_mape,new_mape,model_replaced,rows_used")
-            .order("timestamp", desc=True)
-            .limit(1)
-            .execute()
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    if not result.data:
-        raise HTTPException(status_code=404, detail="No retraining has run yet")
-    return result.data[0]
