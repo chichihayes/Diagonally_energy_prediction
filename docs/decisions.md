@@ -16,10 +16,11 @@ The Unix timestamp is converted to a UK-local datetime index during loading;
 the raw integer column is then discarded.
 
 ## ADR-006: REFIT Smart Home Dataset — House 1
-Covers Oct 9 2013 – Jan 2 2014 with 8-second readings for 9 individual
-appliances. Chosen over UCI Appliances Energy because it provides per-appliance
-granularity (Fridge, Freezers, Washing Machine, etc.) and is a UK household,
-consistent with GBP tariff.
+Covers Oct 9 2013 – Jul 10 2015 (638 days) with 8-second readings for 9 individual
+appliances. There is a 41-day sensor gap in March–April 2014; rows in that window
+are dropped naturally by dropna() on the lag_1008 feature. Chosen over UCI Appliances
+Energy because it provides per-appliance granularity (Fridge, Freezers, Washing
+Machine, etc.) and is a UK household, consistent with GBP tariff.
 
 ## ADR-007: Confidence intervals for bill projection
 Monthly bill returned as optimistic (yhat_lower), most likely (yhat) and
@@ -27,7 +28,7 @@ pessimistic (yhat_upper). Homeowners get a realistic range rather than a
 single number.
 
 ## ADR-008: APScheduler replays test split rows
-Scheduler iterates chronologically through test.csv (Dec 16 – Jan 2) instead of
+Scheduler iterates chronologically through test.csv (Dec 29 2014 – Jul 10 2015) instead of
 reading live sensors. This gives a deterministic, reproducible demo without
 requiring real Zigbee hardware. predicted_wh is taken directly from the
 aggregate_wh column — no model inference on the scheduler tick.
@@ -42,7 +43,8 @@ Rate can change without a redeploy (Ofgem revises quarterly). Applied to
 predicted kWh for both current prediction and monthly bill projection.
 
 ## ADR-012: Chronological train/test split — no shuffle
-Train: Oct 9 – Dec 15 2013 (67 days). Test: Dec 16 – Jan 2 2014 (18 days).
+Train: Oct 16 2013 – Dec 28 2014 (~14 months, 56,198 rows, 70%). Test: Dec 29 2014 – Jul 10 2015
+(~7 months, 23,924 rows, 30%). Split date is _TRAIN_END = "2014-12-28" in data_loader.py.
 Shuffling would leak future data into training — never allowed for time series.
 
 ## ADR-011: Regression model layer removed — forecast-only architecture

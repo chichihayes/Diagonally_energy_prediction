@@ -20,7 +20,9 @@
       "Bash(Remove-Item -Path \"src\\\\model\\\\train_full.py\",\"src\\\\model\\\\train_simple.py\",\"src\\\\model\\\\predict.py\",\"scripts\\\\run_training_full.py\",\"scripts\\\\run_training_simple.py\" -Force)",
       "Bash(ls issues/done/)",
       "Bash(ls issues/open/)",
-      "Bash(python -m pytest tests/test_forecast.py tests/test_api.py -v)"
+      "Bash(python -m pytest tests/test_forecast.py tests/test_api.py -v)",
+      "Bash(del \"src\\\\services\\\\scheduler.py\" \"src\\\\services\\\\retrain_trigger.py\" \"src\\\\model\\\\evaluate.py\" \"scripts\\\\run_retraining.py\" \"tests\\\\test_scheduler.py\" \"tests\\\\test_retrain_trigger.py\" \"tests\\\\test_model.py\" \"tests\\\\test_evaluate.py\")",
+      "Bash(git check-ignore *)"
     ]
   }
 }

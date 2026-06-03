@@ -5,7 +5,7 @@ Diagonally Energy Prediction is a machine learning system that predicts househol
 appliance energy consumption for a UK home using the REFIT Smart Home Dataset (House 1).
 It covers 9 individual appliances (Fridge, ChestFreezer, UprightFreezer, TumbleDryer,
 WashingMachine, Dishwasher, Computer, Television, ElectricHeater) over the period
-October 9 – January 2 2014.
+October 9 2013 – July 10 2015 (638 days, with a 41-day sensor gap in March-April 2014).
 
 The system trains a time series forecast model (Chronos-Bolt, MSTL, or XGBoost with
 lags) to predict future consumption over 24 hours and 7 days.
@@ -21,7 +21,7 @@ shows forecast consumption and estimated electricity cost in GBP (£).
 - Time Series Models: Chronos-Bolt (Small), MSTL, XGBoost with lag features — all trained and evaluated, best MAPE saved as final model
 - Data: pandas, numpy, scikit-learn
 - Model persistence: joblib
-- Dataset: REFIT Smart Home Dataset — House 1 (data/raw/House1.csv, Oct 2013 – Jan 2014, 8-second intervals)
+- Dataset: REFIT Smart Home Dataset — House 1 (data/raw/House_1.csv, Oct 2013 – Jul 2015, 638 days, 8-second intervals)
 - Frontend: HTML + JavaScript (no framework, no build step) + Tailwind CSS via CDN
 - Database: Supabase (Postgres) — stores actual appliance readings, anomaly events, forecasts
 - Cost calculation: Ofgem UK tariff rate (GBP) applied to predicted kWh

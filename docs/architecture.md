@@ -5,7 +5,7 @@
 ```
 diagonally-energy-prediction/
 ├── data/
-│   ├── raw/                              # House1.csv (REFIT Smart Home Dataset, gitignored)
+│   ├── raw/                              # House_1.csv (REFIT Smart Home Dataset, gitignored)
 │   └── processed/                        # train.csv, test.csv, engineered features + lag features
 ├── frontend/
 │   ├── dashboard.html                    # Smart Home tier live dashboard
@@ -56,9 +56,9 @@ diagonally-energy-prediction/
 ## Data Flow — Training (offline)
 
 ```
-data/raw/House1.csv  (REFIT Smart Home Dataset, House 1, Oct–Jan 2014)
+data/raw/House_1.csv  (REFIT Smart Home Dataset, House 1, Oct 2013–Jul 2015)
     ↓
-data_loader.py          # load CSV, drop unused columns, split 80/20 time-ordered
+data_loader.py          # load CSV, drop unused columns, split 70/30 time-ordered
                         # → data/processed/train.csv, test.csv
     ↓
 features.py             # build_lag_matrix: lag_1h, lag_24h, lag_168h,
@@ -80,7 +80,7 @@ evaluate.py             # write_leaderboard — compares models, marks winner
 ```
 APScheduler fires every 15 min
     ↓
-scheduler.py            # read next row from data/processed/test.csv (Dec 16–Jan 2 2014)
+scheduler.py            # read next row from data/processed/test.csv (Dec 29 2014–Jul 10 2015)
                         # predicted_wh = row["aggregate_wh"]  (no model inference on tick)
     ↓
 cost.py                 # wh_to_cost: Wh → kWh × ELECTRICITY_TARIFF_GBP_PER_KWH → GBP
@@ -170,7 +170,7 @@ JSON response           # { forecast: [ { model, mape, mae, rmse, winner } ] }
 |---|---|---|
 | `routes.py` | Validate input, call services, return HTTP response | Contain business logic or ML calls |
 | `features.py` | Build lag feature matrix from aggregate_wh time series | Call the model or touch DB |
-| `data_loader.py` | Load and preprocess House1.csv, expose MODEL_FEATURES and APPLIANCE_COLS | Know anything about models |
+| `data_loader.py` | Load and preprocess House_1.csv, expose MODEL_FEATURES and APPLIANCE_COLS | Know anything about models |
 | `forecast.py` | Load forecast model once at startup, run inference | Reload model per request, touch DB |
 | `cost.py` | Convert Wh → kWh → GBP, calculate bill projection | Know anything about models or weather |
 | `database.py` | Insert and retrieve all Supabase table rows | Know anything about models or features |

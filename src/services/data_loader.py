@@ -4,8 +4,8 @@ import os
 import pandas as pd
 import numpy as np
 
-_CSV_PATH = "data/raw/House1.csv"
-_TRAIN_END = "2013-12-15"
+_CSV_PATH = "data/raw/House_1.csv"
+_TRAIN_END = "2014-12-28"
 
 APPLIANCE_RENAME = {
     "Appliance1": "Fridge",

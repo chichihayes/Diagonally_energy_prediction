@@ -5,8 +5,8 @@
 | Property | Value |
 |---|---|
 | Source | REFIT Smart Home Dataset — House 1 |
-| File | `data/raw/House1.csv` |
-| Date range | October 9 2013 – January 2 2014 |
+| File | `data/raw/House_1.csv` |
+| Date range | October 9 2013 – July 10 2015 (638 days, with a 41-day sensor gap in March–April 2014) |
 | Raw interval | Every 8 seconds |
 | Processed interval | Every 10 minutes (resampled via mean) |
 | Target | `aggregate_wh` (sum of 9 appliances, Wh) |
@@ -15,10 +15,10 @@
 
 ## Train / Test Split
 
-| Split | Date range | ~Rows (after resampling + lag) |
-|---|---|---|
-| Train | Oct 9 – Dec 15 2013 (67 days) | ~9,000 |
-| Test | Dec 16 2013 – Jan 2 2014 (18 days) | ~2,400 |
+| Split | Date range | Rows (after resampling + lag) | % |
+|---|---|---|---|
+| Train | Oct 16 2013 – Dec 28 2014 (~14 months) | 56,198 | 70% |
+| Test | Dec 29 2014 – Jul 10 2015 (~7 months) | 23,924 | 30% |
 
 Split is **chronological — never shuffled**.
 
