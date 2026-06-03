@@ -33,15 +33,6 @@ _OVERNIGHT_APPLIANCES = [
 ]
 
 
-def _cap_outliers_iqr(df: pd.DataFrame, cols: list) -> pd.DataFrame:
-    for col in cols:
-        q1 = df[col].quantile(0.25)
-        q3 = df[col].quantile(0.75)
-        iqr = q3 - q1
-        df[col] = df[col].clip(lower=q1 - 1.5 * iqr, upper=q3 + 1.5 * iqr)
-    return df
-
-
 def load_house1_csv() -> pd.DataFrame:
     df = pd.read_csv(_CSV_PATH)
     df["datetime"] = pd.to_datetime(df["Unix"], unit="s", utc=True).dt.tz_convert("Europe/London").dt.tz_localize(None)
@@ -56,7 +47,6 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.resample("10min").mean()
     df = df.clip(lower=0)
     present = [c for c in APPLIANCE_COLS if c in df.columns]
-    df = _cap_outliers_iqr(df, present)
     df = df.interpolate(method="time", limit=6)
     df = df.dropna()
     df["aggregate_wh"] = df[present].sum(axis=1)
