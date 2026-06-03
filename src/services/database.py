@@ -48,3 +48,7 @@ def get_last_n_clean_readings(n: int) -> list[dict]:
         .execute()
     )
     return [row["input_features"] for row in result.data]
+
+
+def insert_forecast(row: dict) -> None:
+    supabase.table("forecast").insert(row).execute()

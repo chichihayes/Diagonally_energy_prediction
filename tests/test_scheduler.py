@@ -1,52 +1,41 @@
 import pytest
+import pandas as pd
 from unittest.mock import patch, MagicMock
 
+from src.services.data_loader import MODEL_FEATURES, APPLIANCE_COLS
 from src.services.scheduler import submit_smart_home_reading
 
-MOCK_WEATHER = {
-    "T_out": 28.4, "Press_mm_hg": 1012.0,
-    "RH_out": 82.0, "Windspeed": 3.1,
-    "Visibility": 10.0, "Tdewpoint": 25.1,
-}
+
+def _make_test_row() -> pd.Series:
+    """A minimal test-split row with all expected columns."""
+    data = {feat: 5.0 for feat in MODEL_FEATURES}
+    for col in APPLIANCE_COLS:
+        data[col] = 10.0
+    data["aggregate_wh"] = sum(data[col] for col in APPLIANCE_COLS)
+    return pd.Series(data)
 
 
 @pytest.fixture(autouse=True)
-def sensor_env(monkeypatch):
-    monkeypatch.setenv("SENSOR_LOCATION", "Lagos")
-    monkeypatch.setenv("SENSOR_LIGHTS", "0")
-    for i in range(1, 10):
-        monkeypatch.setenv(f"SENSOR_T{i}", "20.0")
-        monkeypatch.setenv(f"SENSOR_RH_{i}", "50.0")
+def patch_test_row(monkeypatch):
+    monkeypatch.setattr("src.services.scheduler._get_next_test_row", _make_test_row)
+    monkeypatch.setattr("src.services.scheduler._get_scaler", lambda: None)
 
 
 def test_submit_smart_home_reading_calls_insert_on_success():
     mock_insert = MagicMock()
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction", mock_insert):
         submit_smart_home_reading()
     mock_insert.assert_called_once()
     call_row = mock_insert.call_args[0][0]
     assert call_row["tier"] == "full"
     assert call_row["predicted_wh"] == 150.0
-    assert call_row["location"] == "Lagos"
-
-
-def test_submit_smart_home_reading_returns_on_weather_exception():
-    mock_insert = MagicMock()
-    with patch("src.services.scheduler.get_weather",
-               side_effect=RuntimeError("connection timeout")), \
-         patch("src.services.scheduler.insert_prediction", mock_insert):
-        result = submit_smart_home_reading()
-    assert result is None
-    mock_insert.assert_not_called()
 
 
 def test_submit_smart_home_reading_returns_on_predict_exception():
     mock_insert = MagicMock()
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full",
+    with patch("src.services.scheduler.predict_full",
                side_effect=RuntimeError("model not loaded")), \
          patch("src.services.scheduler.insert_prediction", mock_insert):
         result = submit_smart_home_reading()
@@ -55,9 +44,8 @@ def test_submit_smart_home_reading_returns_on_predict_exception():
 
 
 def test_submit_smart_home_reading_returns_on_db_exception():
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction",
                side_effect=RuntimeError("supabase write failed")):
         result = submit_smart_home_reading()
@@ -76,9 +64,8 @@ import src.services.scheduler as scheduler_module
 
 def test_scheduler_increments_clean_reading_count_on_non_anomalous_tick():
     scheduler_module._clean_reading_count = 0
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction"), \
          patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}):
         submit_smart_home_reading()
@@ -87,9 +74,8 @@ def test_scheduler_increments_clean_reading_count_on_non_anomalous_tick():
 
 def test_scheduler_does_not_increment_count_on_anomalous_tick():
     scheduler_module._clean_reading_count = 0
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction"), \
          patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": True}):
         submit_smart_home_reading()
@@ -98,11 +84,10 @@ def test_scheduler_does_not_increment_count_on_anomalous_tick():
 
 def test_scheduler_triggers_drift_check_at_100_and_resets_counter():
     scheduler_module._clean_reading_count = 99
-    mock_clean_rows = [{"T1": 20.0, "lights": 0} for _ in range(100)]
+    mock_clean_rows = [{feat: 5.0 for feat in MODEL_FEATURES} for _ in range(100)]
     drift_result = {"drift_detected": False, "drifted_features": [], "deviations": {}}
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction"), \
          patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}), \
          patch("src.services.scheduler.get_last_n_clean_readings", return_value=mock_clean_rows) as mock_fetch, \
@@ -116,9 +101,8 @@ def test_scheduler_triggers_drift_check_at_100_and_resets_counter():
 
 def test_scheduler_does_not_trigger_drift_check_below_100():
     scheduler_module._clean_reading_count = 50
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction"), \
          patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}), \
          patch("src.services.scheduler.check_drift") as mock_drift, \
@@ -131,9 +115,8 @@ def test_scheduler_does_not_trigger_drift_check_below_100():
 
 def test_scheduler_resets_counter_and_skips_drift_check_on_fetch_failure():
     scheduler_module._clean_reading_count = 99
-    with patch("src.services.scheduler.get_weather", return_value=MOCK_WEATHER), \
-         patch("src.services.scheduler.predict_full", return_value=150.0), \
-         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 10.2)), \
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
          patch("src.services.scheduler.insert_prediction"), \
          patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}), \
          patch("src.services.scheduler.get_last_n_clean_readings", side_effect=Exception("connection timeout")), \
@@ -143,3 +126,16 @@ def test_scheduler_resets_counter_and_skips_drift_check_on_fetch_failure():
     mock_drift.assert_not_called()
     mock_store.assert_not_called()
     assert scheduler_module._clean_reading_count == 0
+
+
+def test_scheduler_stores_per_appliance_values():
+    mock_insert = MagicMock()
+    with patch("src.services.scheduler.predict_full", return_value=150.0), \
+         patch("src.services.scheduler.wh_to_cost", return_value=(0.15, 0.05)), \
+         patch("src.services.scheduler.insert_prediction", mock_insert), \
+         patch("src.services.scheduler.monitor_reading", return_value={"low_confidence": False}):
+        submit_smart_home_reading()
+    call_row = mock_insert.call_args[0][0]
+    assert "fridge_wh" in call_row
+    assert "electric_heater_wh" in call_row
+    assert "estimated_cost_gbp" in call_row

@@ -2,8 +2,10 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from src.services.weather import get_weather
-from src.services.features import assemble_full_features
+import joblib
+import pandas as pd
+
+from src.services.data_loader import MODEL_FEATURES, APPLIANCE_COLS
 from src.model.predict import predict_full
 from src.services.cost import wh_to_cost
 from src.services.database import insert_prediction, get_last_n_clean_readings, store_drift_event
@@ -18,15 +20,37 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 _clean_reading_count: int = 0
+_test_df: pd.DataFrame | None = None
+_test_row_index: int = 0
+_scaler = None
+
+_TEST_CSV = os.environ.get("TEST_SPLIT_PATH", "data/processed/test.csv")
+_SCALER_PATH = os.environ.get("SCALER_PATH", "src/model/trained/scaler.joblib")
 
 
-def _read_sensors() -> tuple[int, dict]:
-    lights = int(os.environ.get("SENSOR_LIGHTS", "0"))
-    sensors = {}
-    for i in range(1, 10):
-        sensors[f"T{i}"] = float(os.environ.get(f"SENSOR_T{i}", "20.0"))
-        sensors[f"RH_{i}"] = float(os.environ.get(f"SENSOR_RH_{i}", "50.0"))
-    return lights, sensors
+def _get_test_df() -> pd.DataFrame:
+    global _test_df
+    if _test_df is None:
+        _test_df = pd.read_csv(_TEST_CSV, index_col=0, parse_dates=True)
+    return _test_df
+
+
+def _get_scaler():
+    global _scaler
+    if _scaler is None:
+        try:
+            _scaler = joblib.load(_SCALER_PATH)
+        except (FileNotFoundError, OSError):
+            pass
+    return _scaler
+
+
+def _get_next_test_row() -> pd.Series:
+    global _test_row_index
+    df = _get_test_df()
+    row = df.iloc[_test_row_index % len(df)]
+    _test_row_index += 1
+    return row
 
 
 def fetch_row_counts() -> tuple[int, int]:
@@ -38,39 +62,65 @@ def fetch_row_counts() -> tuple[int, int]:
 
 def submit_smart_home_reading() -> None:
     global _clean_reading_count
-    location = os.environ.get("SENSOR_LOCATION", "Lagos")
-    lights, sensors = _read_sensors()
 
     try:
-        weather = get_weather(location)
+        row = _get_next_test_row()
     except Exception:
-        logger.exception("Scheduler: weather fetch failed — skipping tick")
+        logger.exception("Scheduler: failed to read test split row — skipping tick")
         return
 
-    features = assemble_full_features(lights, sensors, weather)
+    # Raw (unscaled) features for drift detection and storage
+    raw_features = {feat: float(row[feat]) for feat in MODEL_FEATURES if feat in row.index}
+
+    # Apply scaler for model inference if available
+    scaler = _get_scaler()
+    if scaler is not None:
+        import numpy as np
+        feat_arr = [raw_features[f] for f in MODEL_FEATURES if f in raw_features]
+        scaled_arr = scaler.transform([feat_arr])[0]
+        model_features = dict(zip(MODEL_FEATURES, scaled_arr))
+    else:
+        model_features = raw_features
 
     try:
-        predicted_wh = predict_full(features)
+        predicted_wh = predict_full(model_features)
     except Exception:
         logger.exception("Scheduler: model inference failed — skipping tick")
         return
 
-    predicted_kwh, estimated_cost_ngn = wh_to_cost(predicted_wh)
+    predicted_kwh, estimated_cost_gbp = wh_to_cost(predicted_wh)
 
-    monitor_result = monitor_reading(features)
+    monitor_result = monitor_reading(raw_features)
     low_confidence = monitor_result.get(
         "low_confidence", monitor_result.get("is_anomaly", False)
     )
+
+    # Per-appliance actual values from test row
+    per_appliance = {}
+    col_map = {
+        "Fridge": "fridge_wh",
+        "ChestFreezer": "chest_freezer_wh",
+        "UprightFreezer": "upright_freezer_wh",
+        "TumbleDryer": "tumble_dryer_wh",
+        "WashingMachine": "washing_machine_wh",
+        "Dishwasher": "dishwasher_wh",
+        "Computer": "computer_wh",
+        "Television": "television_wh",
+        "ElectricHeater": "electric_heater_wh",
+    }
+    for src_col, dest_col in col_map.items():
+        per_appliance[dest_col] = float(row[src_col]) if src_col in row.index else 0.0
 
     try:
         insert_prediction({
             "tier": "full",
             "predicted_wh": predicted_wh,
             "predicted_kwh": predicted_kwh,
-            "estimated_cost_ngn": estimated_cost_ngn,
-            "location": location,
-            "input_features": features,
+            "estimated_cost_gbp": estimated_cost_gbp,
+            "input_features": raw_features,
             "low_confidence": low_confidence,
+            "aggregate_wh": float(row["aggregate_wh"]) if "aggregate_wh" in row.index else predicted_wh,
+            **per_appliance,
         })
     except Exception:
         logger.exception("Scheduler: Supabase insert failed — skipping tick")

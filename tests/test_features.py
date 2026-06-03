@@ -1,118 +1,100 @@
-def test_assemble_simple_features_returns_correct_keys():
-    from src.services.features import assemble_simple_features
-    weather = {"T_out": 28.4, "RH_out": 82.0, "Windspeed": 3.1, "Visibility": 10.0, "Tdewpoint": 25.1}
-    result = assemble_simple_features(lights=0, T1=19.89, weather=weather)
-    assert list(result.keys()) == ["lights", "T1", "T_out", "RH_out", "Windspeed", "Visibility", "Tdewpoint"]
-    assert result["lights"] == 0
-    assert result["T1"] == 19.89
-    assert result["T_out"] == 28.4
+import pandas as pd
+import numpy as np
+import pytest
+from unittest.mock import patch
+
+from src.services.data_loader import MODEL_FEATURES, APPLIANCE_COLS
 
 
-def test_assemble_simple_features_preserves_weather_values():
-    from src.services.features import assemble_simple_features
-    weather = {"T_out": 30.0, "RH_out": 70.0, "Windspeed": 5.0, "Visibility": 8.0, "Tdewpoint": 22.0}
-    result = assemble_simple_features(lights=100, T1=22.5, weather=weather)
-    assert result["Windspeed"] == 5.0
-    assert result["Visibility"] == 8.0
-
-
-def test_build_simple_matrix_returns_7_columns():
-    from src.services.data_loader import load_and_split
-    from src.services.features import build_simple_matrix
-    train, _ = load_and_split()
-    X, y = build_simple_matrix(train)
-    assert list(X.columns) == ["lights", "T1", "T_out", "RH_out", "Windspeed", "Visibility", "Tdewpoint"]
-    assert y.name == "Appliances"
-    assert len(X) == len(y)
-
-
-def test_build_full_matrix_returns_25_columns():
-    from src.services.data_loader import load_and_split
-    from src.services.features import build_full_matrix
-    train, _ = load_and_split()
-    X, y = build_full_matrix(train)
-    expected_cols = [
-        "lights", "T1", "RH_1", "T2", "RH_2", "T3", "RH_3", "T4", "RH_4",
-        "T5", "RH_5", "T6", "RH_6", "T7", "RH_7", "T8", "RH_8", "T9", "RH_9",
-        "T_out", "Press_mm_hg", "RH_out", "Windspeed", "Visibility", "Tdewpoint",
-    ]
-    assert list(X.columns) == expected_cols
-    assert y.name == "Appliances"
-    assert len(X) == len(y)
-
-
-def test_build_full_matrix_excludes_rv_columns():
-    from src.services.data_loader import load_and_split
-    from src.services.features import build_full_matrix
-    train, _ = load_and_split()
-    X, _ = build_full_matrix(train)
-    assert "rv1" not in X.columns
-    assert "rv2" not in X.columns
-
-
-def test_assemble_full_features_returns_25_keys_in_order():
-    from src.services.features import assemble_full_features
-    sensors = {
-        "T1": 19.89, "RH_1": 47.6,
-        "T2": 19.2,  "RH_2": 44.79,
-        "T3": 19.79, "RH_3": 44.73,
-        "T4": 17.17, "RH_4": 41.67,
-        "T5": 17.2,  "RH_5": 55.2,
-        "T6": 7.03,  "RH_6": 84.26,
-        "T7": 17.2,  "RH_7": 41.63,
-        "T8": 18.2,  "RH_8": 48.9,
-        "T9": 17.03, "RH_9": 45.53,
-    }
-    weather = {
-        "T_out": 28.4, "Press_mm_hg": 1012.0,
-        "RH_out": 82.0, "Windspeed": 3.1,
-        "Visibility": 10.0, "Tdewpoint": 25.1,
-    }
-    result = assemble_full_features(lights=0, sensors=sensors, weather=weather)
-    expected_keys = [
-        "lights",
-        "T1", "RH_1", "T2", "RH_2", "T3", "RH_3", "T4", "RH_4",
-        "T5", "RH_5", "T6", "RH_6", "T7", "RH_7", "T8", "RH_8", "T9", "RH_9",
-        "T_out", "Press_mm_hg", "RH_out", "Windspeed", "Visibility", "Tdewpoint",
-    ]
-    assert list(result.keys()) == expected_keys
-    assert len(result) == 25
-    assert result["lights"] == 0
-    assert result["T1"] == 19.89
-    assert result["T_out"] == 28.4
-    assert result["Press_mm_hg"] == 1012.0
-
-
-def test_assemble_full_features_preserves_all_sensor_values():
-    from src.services.features import assemble_full_features
-    sensors = {f"T{i}": float(i) for i in range(1, 10)}
-    sensors.update({f"RH_{i}": float(i * 10) for i in range(1, 10)})
-    weather = {
-        "T_out": 30.0, "Press_mm_hg": 1010.0,
-        "RH_out": 75.0, "Windspeed": 4.0,
-        "Visibility": 12.0, "Tdewpoint": 22.0,
-    }
-    result = assemble_full_features(lights=50, sensors=sensors, weather=weather)
-    assert result["T3"] == 3.0
-    assert result["RH_7"] == 70.0
-    assert result["Windspeed"] == 4.0
-    assert result["lights"] == 50
+def _make_preprocessed_df(n: int = 2000) -> pd.DataFrame:
+    """Minimal preprocessed dataframe that mirrors what load_and_split() returns."""
+    rng = np.random.default_rng(42)
+    idx = pd.date_range("2013-10-09", periods=n, freq="10min")
+    df = pd.DataFrame(index=idx)
+    for col in APPLIANCE_COLS:
+        df[col] = rng.uniform(0, 200, n)
+    df["aggregate_wh"] = df[APPLIANCE_COLS].sum(axis=1)
+    df["hour"] = df.index.hour
+    df["day_of_week"] = df.index.dayofweek
+    df["month"] = df.index.month
+    df["is_weekend"] = (df.index.dayofweek >= 5).astype(int)
+    df["is_night"] = ((df.index.hour >= 22) | (df.index.hour < 6)).astype(int)
+    df["is_peak_hour"] = ((df.index.hour >= 16) & (df.index.hour <= 20)).astype(int)
+    agg = df["aggregate_wh"]
+    df["lag_1"] = agg.shift(1)
+    df["lag_6"] = agg.shift(6)
+    df["lag_144"] = agg.shift(144)
+    df["lag_1008"] = agg.shift(1008)
+    df["rolling_mean_6"] = agg.shift(1).rolling(6).mean()
+    df["rolling_mean_144"] = agg.shift(1).rolling(144).mean()
+    df["rolling_std_6"] = agg.shift(1).rolling(6).std()
+    return df.dropna()
 
 
 def test_build_lag_matrix_returns_correct_columns():
-    from src.services.data_loader import load_and_split
     from src.services.features import build_lag_matrix
-    train, _ = load_and_split()
-    X, y = build_lag_matrix(train)
-    expected = ["lag_1h", "lag_24h", "lag_168h", "rolling_mean_3h", "rolling_mean_24h"]
+    df = _make_preprocessed_df()
+    X, y = build_lag_matrix(df)
+    expected = ["lag_1", "lag_6", "lag_144", "lag_1008",
+                "rolling_mean_6", "rolling_mean_144", "rolling_std_6"]
     assert list(X.columns) == expected
-    assert y.name == "Appliances"
 
 
-def test_build_lag_matrix_has_no_nulls_after_dropna():
-    from src.services.data_loader import load_and_split
+def test_build_lag_matrix_target_is_aggregate_wh():
     from src.services.features import build_lag_matrix
-    train, _ = load_and_split()
-    X, y = build_lag_matrix(train)
+    df = _make_preprocessed_df()
+    X, y = build_lag_matrix(df)
+    assert y.name == "aggregate_wh"
+
+
+def test_build_lag_matrix_has_no_nulls():
+    from src.services.features import build_lag_matrix
+    df = _make_preprocessed_df()
+    X, y = build_lag_matrix(df)
     assert X.isna().sum().sum() == 0
     assert y.isna().sum() == 0
+
+
+def test_build_lag_matrix_x_and_y_same_length():
+    from src.services.features import build_lag_matrix
+    df = _make_preprocessed_df()
+    X, y = build_lag_matrix(df)
+    assert len(X) == len(y)
+
+
+def test_build_model_matrix_returns_13_features():
+    from src.services.features import build_model_matrix
+    df = _make_preprocessed_df()
+    X, y = build_model_matrix(df)
+    assert list(X.columns) == MODEL_FEATURES
+    assert len(X.columns) == 13
+
+
+def test_build_model_matrix_target_is_aggregate_wh():
+    from src.services.features import build_model_matrix
+    df = _make_preprocessed_df()
+    X, y = build_model_matrix(df)
+    assert y.name == "aggregate_wh"
+
+
+def test_build_model_matrix_no_nulls():
+    from src.services.features import build_model_matrix
+    df = _make_preprocessed_df()
+    X, y = build_model_matrix(df)
+    assert X.isna().sum().sum() == 0
+
+
+def test_model_features_has_correct_names():
+    assert "hour" in MODEL_FEATURES
+    assert "is_night" in MODEL_FEATURES
+    assert "is_peak_hour" in MODEL_FEATURES
+    assert "lag_1" in MODEL_FEATURES
+    assert "lag_1008" in MODEL_FEATURES
+    assert "rolling_std_6" in MODEL_FEATURES
+    assert len(MODEL_FEATURES) == 13
+
+
+def test_appliance_cols_has_9_entries():
+    assert len(APPLIANCE_COLS) == 9
+    assert "Fridge" in APPLIANCE_COLS
+    assert "ElectricHeater" in APPLIANCE_COLS

@@ -2,8 +2,6 @@ import json
 import os
 import pathlib
 from datetime import datetime
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Query
 
 from src.services import database
@@ -37,11 +35,9 @@ def get_leaderboard():
 
 
 @router.get("/forecast/24h")
-async def get_forecast_24h(location: Optional[str] = None):
-    if not location:
-        raise HTTPException(status_code=400, detail="location is required")
+async def get_forecast_24h():
     try:
-        raw = _forecast_24h(location)
+        raw = _forecast_24h()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -52,7 +48,7 @@ async def get_forecast_24h(location: Optional[str] = None):
             "predicted_kwh": entry["predicted_kwh"],
             "lower_wh": entry["yhat_lower"],
             "upper_wh": entry["yhat_upper"],
-            "estimated_cost_ngn": entry["estimated_cost_ngn"],
+            "estimated_cost_gbp": entry["estimated_cost_gbp"],
         }
         for entry in raw
     ]
@@ -64,9 +60,7 @@ async def get_forecast_24h(location: Optional[str] = None):
 
 
 @router.get("/forecast/7d")
-def get_forecast_7d(location: str = None):
-    if not location:
-        raise HTTPException(status_code=400, detail="location query param is required")
+def get_forecast_7d():
     try:
         result = forecast_7d()
     except Exception as exc:

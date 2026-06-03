@@ -7,14 +7,14 @@ from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 
 from src.services.data_loader import load_and_split
-from src.services.features import build_full_matrix
+from src.services.features import build_model_matrix
 from src.model.evaluate import select_best_by_r2
 
 
 def train_and_save(output_path: str = "src/model/trained/model_full.joblib") -> None:
     train_df, test_df = load_and_split()
-    X_train, y_train = build_full_matrix(train_df)
-    X_test, y_test = build_full_matrix(test_df)
+    X_train, y_train = build_model_matrix(train_df)
+    X_test, y_test = build_model_matrix(test_df)
 
     models = [
         ("RandomForest", RandomForestRegressor(n_jobs=-1, random_state=42)),

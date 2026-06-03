@@ -72,7 +72,7 @@ async function submitPrediction(payload) {
 function renderResult(data) {
   document.getElementById('result-wh').textContent = `${data.predicted_wh} Wh`;
   document.getElementById('result-kwh').textContent = `${data.predicted_kwh} kWh`;
-  document.getElementById('result-cost').textContent = `₦${data.estimated_cost_ngn}`;
+  document.getElementById('result-cost').textContent = `£${data.estimated_cost_gbp}`;
   const wf = data.weather_factors;
   document.getElementById('result-t-out').textContent = `${wf.T_out} °C`;
   document.getElementById('result-rh-out').textContent = `${wf.RH_out} %`;
@@ -110,7 +110,7 @@ async function loadHistory() {
       <td class="px-4 py-3 whitespace-nowrap">${time}</td>
       <td class="px-4 py-3">${row.predicted_wh.toFixed(1)}</td>
       <td class="px-4 py-3">${row.predicted_kwh.toFixed(4)}</td>
-      <td class="px-4 py-3">₦${row.estimated_cost_ngn.toFixed(2)}</td>
+      <td class="px-4 py-3">£${row.estimated_cost_gbp.toFixed(2)}</td>
     </tr>`;
   }).join('');
 }
@@ -163,7 +163,7 @@ function populateHeroCard(prediction) {
   document.getElementById('predicted-wh').textContent = prediction.predicted_wh;
   document.getElementById('predicted-kwh').textContent = prediction.predicted_kwh;
   document.getElementById('estimated-cost').textContent =
-    '₦' + prediction.estimated_cost_ngn.toFixed(2);
+    '£' + prediction.estimated_cost_gbp.toFixed(2);
   document.getElementById('last-updated').textContent =
     new Date(prediction.created_at).toLocaleString();
 }
@@ -312,7 +312,7 @@ function renderHistoryTable(predictions) {
       <td class="py-1 pr-4">${formatDate(p.created_at)}</td>
       <td class="py-1 pr-4">${Math.round(p.predicted_wh)}</td>
       <td class="py-1 pr-4">${p.predicted_kwh.toFixed(4)}</td>
-      <td class="py-1">&#8358;${p.estimated_cost_ngn.toFixed(2)}</td>
+      <td class="py-1">£${p.estimated_cost_gbp.toFixed(2)}</td>
     </tr>
   `).join('');
 }
@@ -332,8 +332,8 @@ function setForecastLoading(on) {
   spinner.classList.toggle('hidden', !on);
 }
 
-async function fetchForecast24h(location) {
-  const res = await fetch(`/api/v1/forecast/24h?location=${encodeURIComponent(location)}`);
+async function fetchForecast24h() {
+  const res = await fetch('/api/v1/forecast/24h');
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Server error ${res.status}`);
@@ -384,7 +384,7 @@ function render24hChart(data, canvasId) {
     fill: false,
   };
 
-  const costs = data.forecast.map(p => p.estimated_cost_ngn);
+  const costs = data.forecast.map(p => p.estimated_cost_gbp);
 
   if (chart24h) chart24h.destroy();
   const ctx = document.getElementById(canvasId).getContext('2d');
@@ -399,7 +399,7 @@ function render24hChart(data, canvasId) {
           callbacks: {
             afterLabel: (item) => {
               if (item.datasetIndex === 2) {
-                return `Cost: ₦${costs[item.dataIndex].toFixed(2)}`;
+                return `Cost: £${costs[item.dataIndex].toFixed(2)}`;
               }
               return null;
             },
@@ -414,8 +414,8 @@ function render24hChart(data, canvasId) {
   });
 }
 
-async function fetchForecast7d(location) {
-  const res = await fetch(`/api/v1/forecast/7d?location=${encodeURIComponent(location)}`);
+async function fetchForecast7d() {
+  const res = await fetch('/api/v1/forecast/7d');
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Server error ${res.status}`);
@@ -459,8 +459,8 @@ function render7dChart(data, canvasId) {
   });
 }
 
-function formatNGN(amount) {
-  return '₦' + amount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatGBP(amount) {
+  return '£' + amount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function renderBillCard(bill) {
@@ -469,15 +469,15 @@ function renderBillCard(bill) {
     <div class="grid grid-cols-3 gap-4 text-center">
       <div class="bg-green-50 rounded-xl p-4">
         <p class="text-xs text-green-600 font-medium uppercase tracking-wide mb-1">Optimistic</p>
-        <p data-bill="optimistic" class="text-xl font-bold text-green-700">${formatNGN(bill.optimistic_ngn)}</p>
+        <p data-bill="optimistic" class="text-xl font-bold text-green-700">${formatGBP(bill.optimistic_gbp)}</p>
       </div>
       <div class="bg-indigo-50 rounded-xl p-5 ring-2 ring-indigo-400">
         <p class="text-xs text-indigo-600 font-medium uppercase tracking-wide mb-1">Most Likely</p>
-        <p data-bill="most-likely" class="text-2xl font-extrabold text-indigo-700">${formatNGN(bill.most_likely_ngn)}</p>
+        <p data-bill="most-likely" class="text-2xl font-extrabold text-indigo-700">${formatGBP(bill.most_likely_gbp)}</p>
       </div>
       <div class="bg-red-50 rounded-xl p-4">
         <p class="text-xs text-red-600 font-medium uppercase tracking-wide mb-1">Pessimistic</p>
-        <p data-bill="pessimistic" class="text-xl font-bold text-red-700">${formatNGN(bill.pessimistic_ngn)}</p>
+        <p data-bill="pessimistic" class="text-xl font-bold text-red-700">${formatGBP(bill.pessimistic_gbp)}</p>
       </div>
     </div>
   `;
@@ -486,8 +486,6 @@ function renderBillCard(bill) {
 if (document.getElementById('forecast-form')) {
   document.getElementById('forecast-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const location = document.getElementById('location').value.trim();
-    if (!location) return;
 
     const errorEl = document.getElementById('forecast-error');
     errorEl.classList.add('hidden');
@@ -499,8 +497,8 @@ if (document.getElementById('forecast-form')) {
     setForecastLoading(true);
     try {
       const [data24h, data7d] = await Promise.all([
-        fetchForecast24h(location),
-        fetchForecast7d(location),
+        fetchForecast24h(),
+        fetchForecast7d(),
       ]);
 
       render24hChart(data24h, 'chart-24h');

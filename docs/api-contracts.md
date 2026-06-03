@@ -7,20 +7,31 @@ Returns stored prediction history from Supabase ordered by most recent first.
 **Query params:**
 | Param | Type | Default | Description |
 |---|---|---|---|
-| tier | string | — | Filter by `full` or `simple` (optional) |
-| limit | int | 20 | Max records to return |
+| tier | string | — | Filter by `full` (optional) |
+| limit | int | 20 | Max records to return (1–50) |
+| since | datetime | — | Return only records after this ISO timestamp |
 
 **Response — 200:**
 ```json
 [
   {
     "id": "uuid",
-    "tier": "simple",
-    "predicted_wh": 60.5,
-    "predicted_kwh": 0.0605,
-    "estimated_cost_ngn": 5.18,
-    "location": "Lagos",
-    "created_at": "2026-06-01T10:00:00Z"
+    "tier": "full",
+    "predicted_wh": 320.5,
+    "predicted_kwh": 0.3205,
+    "estimated_cost_gbp": 0.11,
+    "aggregate_wh": 315.0,
+    "fridge_wh": 45.0,
+    "chest_freezer_wh": 20.0,
+    "upright_freezer_wh": 18.0,
+    "tumble_dryer_wh": 0.0,
+    "washing_machine_wh": 0.0,
+    "dishwasher_wh": 0.0,
+    "computer_wh": 80.0,
+    "television_wh": 95.0,
+    "electric_heater_wh": 57.0,
+    "low_confidence": false,
+    "created_at": "2013-12-16T09:00:00Z"
   }
 ]
 ```
@@ -31,34 +42,28 @@ Returns stored prediction history from Supabase ordered by most recent first.
 
 Returns hourly consumption forecast for the next 24 hours.
 
-**Query params:**
-| Param | Type | Required | Description |
-|---|---|---|---|
-| location | string | Yes | City name (e.g. `Lagos`) |
-
 **Response — 200:**
 ```json
 {
   "forecast": [
     {
-      "hour": "2026-06-01T14:00:00Z",
+      "hour": "2013-12-17T10:00:00",
       "predicted_wh": 280.5,
       "predicted_kwh": 0.28,
       "lower_wh": 210.0,
       "upper_wh": 350.0,
-      "estimated_cost_ngn": 19.04
+      "estimated_cost_gbp": 0.10
     }
   ],
-  "peak_hour": "2026-06-01T20:00:00Z",
-  "lowest_hour": "2026-06-01T04:00:00Z"
+  "peak_hour": "2013-12-17T18:00:00",
+  "lowest_hour": "2013-12-17T04:00:00"
 }
 ```
 
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 400 | Missing location param |
-| 500 | Forecast model error or weather fetch failure |
+| 500 | Forecast model error |
 
 ---
 
@@ -66,30 +71,25 @@ Returns hourly consumption forecast for the next 24 hours.
 
 Returns daily consumption forecast for the next 7 days with monthly bill projection.
 
-**Query params:**
-| Param | Type | Required | Description |
-|---|---|---|---|
-| location | string | Yes | City name (e.g. `Lagos`) |
-
 **Response — 200:**
 ```json
 {
   "forecast": [
     {
-      "date": "2026-06-01",
+      "date": "2013-12-17",
       "predicted_wh": 6720.0,
       "predicted_kwh": 6.72,
       "lower_wh": 5040.0,
       "upper_wh": 8400.0,
-      "estimated_cost_ngn": 456.96
+      "estimated_cost_gbp": 2.28
     }
   ],
   "peak_day": "Tuesday",
   "lowest_day": "Wednesday",
   "projected_month_bill": {
-    "optimistic_ngn": 3200.00,
-    "pessimistic_ngn": 5100.00,
-    "most_likely_ngn": 4200.00
+    "optimistic_gbp": 48.00,
+    "pessimistic_gbp": 76.00,
+    "most_likely_gbp": 62.00
   }
 }
 ```
@@ -97,32 +97,25 @@ Returns daily consumption forecast for the next 7 days with monthly bill project
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 400 | Missing location param |
-| 500 | Forecast model error or weather fetch failure |
+| 500 | Forecast model error |
 
 ---
 
 ## GET /api/v1/models/leaderboard
 
-Returns R² scores for all regression models and MAPE scores for all forecast models, with the selected winner for each.
+Returns R² scores for all regression models and MAPE/MAE/RMSE scores for all forecast models.
 
 **Response — 200:**
 ```json
 {
-  "regression_full": [
+  "regression": [
     { "model": "RandomForest", "r2": 0.87, "winner": false },
-    { "model": "XGBoost", "r2": 0.91, "winner": true },
-    { "model": "LightGBM", "r2": 0.90, "winner": false },
-    { "model": "CatBoost", "r2": 0.89, "winner": false },
-    { "model": "ExtraTrees", "r2": 0.86, "winner": false },
-    { "model": "Ridge", "r2": 0.71, "winner": false }
+    { "model": "XGBoost", "r2": 0.91, "winner": true }
   ],
   "forecast": [
-    { "model": "Prophet", "mape": 12.3, "winner": false },
-    { "model": "XGBoost_lags", "mape": 10.1, "winner": false },
-    { "model": "LightGBM_lags", "mape": 9.8, "winner": false },
-    { "model": "LSTM", "mape": 8.9, "winner": false },
-    { "model": "TFT", "mape": 7.2, "winner": true }
+    { "model": "Chronos", "mae": 45.2, "rmse": 60.1, "mape": 8.5, "winner": true },
+    { "model": "MSTL",    "mae": 55.0, "rmse": 72.0, "mape": 9.8, "winner": false },
+    { "model": "XGBoost_lags", "mae": 60.1, "rmse": 80.5, "mape": 11.2, "winner": false }
   ]
 }
 ```
@@ -130,7 +123,7 @@ Returns R² scores for all regression models and MAPE scores for all forecast mo
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 500 | Model leaderboard data unavailable |
+| 503 | Leaderboard file not found — run training scripts first |
 
 ---
 
@@ -145,15 +138,15 @@ Returns R² scores for all regression models and MAPE scores for all forecast mo
 
 ## GET /api/v1/monitor/drift
 
-Returns the most recent drift check result from the drift_log table.
+Returns the most recent drift check result.
 
 **Response — 200:**
 ```json
 {
-  "timestamp": "2026-06-01T10:00:00Z",
+  "timestamp": "2013-12-16T10:00:00Z",
   "drift_detected": true,
-  "drifted_features": ["T1", "RH_2"],
-  "deviations": {"T1": 20.5, "RH_2": 16.1},
+  "drifted_features": ["lag_1", "rolling_mean_6"],
+  "deviations": {"lag_1": 20.5, "rolling_mean_6": 16.1},
   "clean_row_count": 100
 }
 ```
@@ -161,19 +154,19 @@ Returns the most recent drift check result from the drift_log table.
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 404  | No drift check has been run yet |
-| 500  | Failed to retrieve drift status from database |
+| 404 | No drift check has been run yet |
+| 500 | Failed to retrieve drift status from database |
 
 ---
 
 ## GET /api/v1/monitor/retrain
 
-Returns the most recent retraining outcome from the retrain_log table.
+Returns the most recent retraining outcome.
 
 **Response — 200:**
 ```json
 {
-  "timestamp": "2026-06-01T10:00:00+00:00",
+  "timestamp": "2013-12-16T10:00:00+00:00",
   "old_model_r2": 0.75,
   "new_model_r2": 0.85,
   "model_replaced": true,
@@ -184,5 +177,5 @@ Returns the most recent retraining outcome from the retrain_log table.
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 404  | No retraining has run yet |
-| 500  | Supabase query error |
+| 404 | No retraining has run yet |
+| 500 | Supabase query error |

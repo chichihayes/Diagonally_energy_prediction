@@ -1,63 +1,48 @@
 ﻿# CLAUDE.md â€” Diagonally Energy Prediction
 
 ## What this app is
-Diagonally Energy Prediction is a machine learning system that helps homeowners 
-predict their household appliance energy consumption in real time. It supports two tiers:
+Diagonally Energy Prediction is a machine learning system that predicts household
+appliance energy consumption for a UK home using the REFIT Smart Home Dataset (House 1).
+It covers 9 individual appliances (Fridge, ChestFreezer, UprightFreezer, TumbleDryer,
+WashingMachine, Dishwasher, Computer, Television, ElectricHeater) over the period
+October 9 – January 2 2014.
 
-Tier A — Smart Home: Zigbee sensors installed in each room automatically collect 
-room temperatures (T1-T9) and humidity readings (RH_1-RH_9). Outside weather 
-features (T_out, RH_out, Windspeed, Visibility, Tdewpoint, Press_mm_hg) are 
-auto-fetched from OpenWeatherMap API. The homeowner only inputs lights usage. 
-All 25 features are submitted to POST /api/v1/predict/full and the model returns 
-the predicted appliance energy consumption in watt-hours. This is the most accurate tier.
+The system trains a regression model to predict aggregate energy consumption from
+time-based and lag features, and a time series forecast model (Chronos-Bolt, MSTL,
+or XGBoost with lags) to predict future consumption over 24 hours and 7 days.
 
-Tier B — Basic: No sensors needed. The homeowner inputs only lights usage and 
-one room temperature (T1). All outside weather features are auto-fetched from 
-OpenWeatherMap API using the homeowner's location. 7 features total are submitted 
-to POST /api/v1/predict/simple and the model returns a predicted appliance energy 
-consumption in watt-hours. Less accurate but accessible to any homeowner.
-
-The goal of both tiers is to help homeowners identify energy-hungry patterns, 
-understand what drives their appliance consumption, and take action to reduce 
-their electricity bills before they arrive.
-
-The system also includes a lightweight HTML + JavaScript frontend where homeowners 
-can enter their readings and see their predicted consumption and estimated electricity 
-cost in Nigerian Naira instantly. Every prediction is stored in Supabase so the 
-homeowner can view their consumption history. A scheduler automatically submits 
-sensor readings to the API every 15 minutes for Smart Home tier users so no manual 
-input is needed.
+A scheduler replays the test split (Dec 16 – Jan 2 2014) rows every 15 minutes,
+storing per-appliance and predicted-aggregate values in Supabase. A lightweight
+HTML + JavaScript frontend shows predicted consumption and estimated electricity
+cost in GBP (£). Drift detection and automatic retraining are built in.
 
 ## Stack
 - Language: Python 3.11
 - API: FastAPI + Uvicorn
 - Regression Models (Layer 1): Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression — all trained and evaluated, best R² saved as final model
-- Time Series Models (Layer 2): Prophet, XGBoost with lag features, LightGBM with lag features, LSTM, TFT (Temporal Fusion Transformer) — all trained and evaluated, best MAPE saved as final model
-- Deep Learning: PyTorch (for LSTM and TFT models)
-- Time Series Library: neuralforecast (for TFT and N-BEATS), prophet
-- Data: pandas, numpy
+- Time Series Models (Layer 2): Chronos-Bolt (Small), MSTL, XGBoost with lag features — all trained and evaluated, best MAPE saved as final model
+- Data: pandas, numpy, scikit-learn (StandardScaler)
 - Model persistence: joblib
-- Dataset: UCI Appliances Energy Prediction (19,735 rows, 28 features, CSV format)
-- Weather API: OpenWeatherMap (free tier) — supplies T_out, RH_out, Windspeed, Visibility, Tdewpoint, Press_mm_hg for both tiers
+- Dataset: REFIT Smart Home Dataset — House 1 (data/raw/House1.csv, Oct 2013 – Jan 2014, 8-second intervals)
 - Frontend: HTML + JavaScript (no framework, no build step) + Tailwind CSS via CDN
-- Database: Supabase (Postgres) — stores all predictions and sensor readings
-- Scheduler: APScheduler — submits readings to API every 15 minutes automatically
-- Cost calculation: NERC tariff rate applied to predicted kWh to return estimated cost in NGN
+- Database: Supabase (Postgres) — stores per-appliance predictions, forecasts, drift logs
+- Scheduler: APScheduler — replays test split rows every 15 minutes
+- Cost calculation: Ofgem UK tariff rate (GBP) applied to predicted kWh
 - Testing: pytest + httpx
 - CI: GitHub Actions
 
 ## Environment variables
 ```
 MODEL_PATH_FULL=src/model/trained/model_full.joblib
-MODEL_PATH_SIMPLE=src/model/trained/model_simple.joblib
 MODEL_PATH_FORECAST=src/model/trained/model_forecast.joblib
+SCALER_PATH=src/model/trained/scaler.joblib
+TEST_SPLIT_PATH=data/processed/test.csv
 API_HOST=0.0.0.0
 API_PORT=8000
-OPENWEATHERMAP_API_KEY=
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-ELECTRICITY_TARIFF_NGN_PER_KWH=68.00
+ELECTRICITY_TARIFF_GBP_PER_KWH=0.34
 ```
 
 ## Spec documents (read before touching any file)
@@ -100,7 +85,6 @@ diagonally-energy-prediction/
 │   └── services/
 │       ├── features.py                   # assemble feature dicts for both tiers + lag features
 │       ├── data_loader.py                # load and preprocess KAG_energydata_complete.csv
-│       ├── weather.py                    # OpenWeatherMap client with 10-min cache
 │       ├── cost.py                       # Wh to NGN conversion + monthly bill projection
 │       ├── database.py                   # Supabase insert and retrieve predictions and forecasts
 │       ├── scheduler.py                  # APScheduler — auto-submit readings every 15 minutes
@@ -112,7 +96,6 @@ diagonally-energy-prediction/
 │   ├── test_model.py                     # regression model inference tests
 │   ├── test_forecast.py                  # time series forecast tests
 │   ├── test_evaluate.py                  # model comparison and leaderboard tests
-│   ├── test_weather.py                   # weather client and cache tests
 │   ├── test_cost.py                      # cost calculation and bill projection tests
 │   ├── test_database.py                  # Supabase storage tests
 │   ├── test_monitor.py                   # Z-Score anomaly detection tests
@@ -130,44 +113,43 @@ diagonally-energy-prediction/
 
 Layer 1 — Current Consumption (Regression):
 - Six models trained and evaluated: Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees, Ridge Regression
-- All six trained on same feature sets — full (25 features) and simple (7 features)
-- Evaluation metric: R² score on held-out test split (80/20 split, no shuffle — time ordered)
-- Best R² model saved as model_full.joblib and model_simple.joblib respectively
-- Full model features: lights, T1, RH_1, T2, RH_2, T3, RH_3, T4, RH_4, T5, RH_5, T6, RH_6, T7, RH_7, T8, RH_8, T9, RH_9, T_out, Press_mm_hg, RH_out, Windspeed, Visibility, Tdewpoint
-- Simple model features: lights, T1, T_out, RH_out, Windspeed, Visibility, Tdewpoint
-- rv1 and rv2 always dropped at preprocessing — random noise variables
+- All six trained on MODEL_FEATURES (13 features) against aggregate_wh target
+- Train split: Oct 9 – Dec 15 2013. Test split: Dec 16 2013 – Jan 2 2014. Never shuffle.
+- Evaluation metric: R² score on held-out test split
+- Best R² model saved as model_full.joblib
+- MODEL_FEATURES: hour, day_of_week, month, is_weekend, is_night, is_peak_hour, lag_1, lag_6, lag_144, lag_1008, rolling_mean_6, rolling_mean_144, rolling_std_6
+- is_night = 1 if hour >= 22 or hour < 6 (UK hours)
+- is_peak_hour = 1 if 16 <= hour <= 20 (UK peak demand)
+- All MODEL_FEATURES StandardScaler-transformed; scaler saved as scaler.joblib
 - Never pull all rows into memory for prediction — accept feature dict, return float
 - All models loaded once at startup as global singletons — never reload per request
-- Retrain by running scripts/run_training_full.py or run_training_simple.py — never retrain inside the API
+- Retrain by running scripts/run_training_full.py — never retrain inside the API
 
 Layer 2 — Future Consumption (Time Series):
-- Five models trained and evaluated: Prophet, XGBoost with lag features, LightGBM with lag features, LSTM, TFT (Temporal Fusion Transformer)
-- Evaluation metric: MAPE (Mean Absolute Percentage Error) on held-out test split
+- Three models trained and evaluated: Chronos-Bolt (Small), MSTL, XGBoost with lag features
+- Evaluation metrics: MAE, RMSE, MAPE on held-out test split
 - Best MAPE model saved as model_forecast.joblib
-- All time series models trained on historical Appliances column with datetime index
-- Lag features for XGBoost and LightGBM: lag_1h, lag_24h, lag_168h (1 week), rolling_mean_3h, rolling_mean_24h
-- LSTM and TFT implemented using PyTorch via neuralforecast library
+- Leaderboard saved as src/model/trained/forecast_leaderboard.json
+- All models trained on aggregate_wh time series from train split
 - Forecast horizons: 24 hours ahead (hourly) and 7 days ahead (daily)
 - All forecast models return: yhat, yhat_lower, yhat_upper (confidence interval)
-- Prophet input: dataframe with ds (datetime) and y (Appliances Wh) columns
 - Never expose raw model output to the API — always format into clean JSON
 - forecast.py loads best model once at startup as a singleton
 - Retrain by running scripts/run_training_forecast.py — never retrain inside the API
 
 Layer 3 — Bill Estimation (No Model):
 - Pure calculation — no ML model involved
-- Formula: projected_bill_ngn = sum(forecast_kwh) × ELECTRICITY_TARIFF_NGN_PER_KWH
+- Formula: projected_bill_gbp = sum(forecast_kwh) × ELECTRICITY_TARIFF_GBP_PER_KWH
 - Return optimistic (yhat_lower), pessimistic (yhat_upper) and most likely (yhat) bill projections
-- Days remaining calculated from datetime.now() — never hardcoded
-- Always read tariff from ELECTRICITY_TARIFF_NGN_PER_KWH environment variable
-- Round all NGN values to 2 decimal places
+- Always read tariff from ELECTRICITY_TARIFF_GBP_PER_KWH environment variable
+- Round all GBP values to 2 decimal places
 
 ## Monitoring and retraining conventions
 
 Anomaly Detection — Z-Score (every 15 min reading):
 - Formula: Z = (new_value - training_mean) / training_std
-- Training mean and std calculated once from UCI CSV and saved in src/model/trained/training_stats.json
-- Check all 25 input features on every incoming reading
+- Training mean and std calculated once from train split and saved in src/model/trained/training_stats.json
+- Check all 13 MODEL_FEATURES on every incoming reading
 - Z > 3 on ANY feature → reading flagged as anomaly
 - Anomalous readings stored in Supabase anomalies table with anomaly=True
 - Prediction still made but marked low_confidence=True
@@ -176,9 +158,9 @@ Anomaly Detection — Z-Score (every 15 min reading):
 
 Drift Detection — Rolling Mean Deviation (every 100 clean readings):
 - Formula: deviation = |rolling_mean - training_mean| / training_mean × 100
-- training_mean is fixed from UCI CSV — never changes
+- training_mean is fixed from train split — never changes
 - rolling_mean is mean of last 100 clean readings for each feature
-- Check all 25 features
+- Check all 13 MODEL_FEATURES
 - Any feature deviation > 15% → drift flagged
 - Drift flagged → log to Supabase drift_log table
 - Drift flagged → start counting toward retraining threshold
@@ -187,7 +169,7 @@ Retraining Trigger — 3 conditions must ALL be true:
 - Condition 1: Drift detected (at least one feature deviation > 15%)
 - Condition 2: At least 2000 clean rows accumulated in Supabase since drift was first flagged
 - Condition 3: Anomaly rate < 10% (clean rows / total rows > 90%)
-- When all 3 met: pull all clean rows from Supabase, combine with UCI dataset, retrain all 6 models, evaluate on held-out set, save best R² model
+- When all 3 met: pull all clean rows from Supabase, combine with train split data, retrain all 6 models, evaluate on held-out set, save best R² model
 - If new model R² > old model R² → replace model
 - If new model R² < old model R² → keep old model
 - Log outcome to Supabase retrain_log table either way
@@ -203,25 +185,26 @@ Supabase tables for monitoring:
 - DB reads: supabase.table('predictions').select('*').execute()
 - DB writes: supabase.table('predictions').insert({}).execute()
 - RLS enabled on all tables — every request must pass the correct key
-- predictions table stores: id, timestamp, tier, input_features (JSON), 
-  predicted_wh, predicted_kwh, estimated_cost_ngn, location
+- predictions table stores: id, created_at, tier, input_features (JSON),
+  predicted_wh, predicted_kwh, estimated_cost_gbp, aggregate_wh,
+  fridge_wh, chest_freezer_wh, upright_freezer_wh, tumble_dryer_wh,
+  washing_machine_wh, dishwasher_wh, computer_wh, television_wh,
+  electric_heater_wh, low_confidence (bool), anomaly (bool)
 - Never store raw model files or training data in Supabase
 
 ## Cost calculation conventions
 - Always convert Wh to kWh before applying tariff: predicted_kwh = predicted_wh / 1000
-- Tariff rate comes from environment variable ELECTRICITY_TARIFF_NGN_PER_KWH
+- Tariff rate comes from environment variable ELECTRICITY_TARIFF_GBP_PER_KWH
 - Never hardcode the tariff rate inside any function — always read from env
-- Formula: estimated_cost_ngn = predicted_kwh * ELECTRICITY_TARIFF_NGN_PER_KWH
+- Formula: estimated_cost_gbp = predicted_kwh * ELECTRICITY_TARIFF_GBP_PER_KWH
 - Round cost to 2 decimal places before returning in API response
 
 ## Scheduler conventions
 - APScheduler runs as a background service inside the FastAPI app
 - Interval: every 15 minutes
-- On each tick: fetch latest sensor readings → call predict/full internally → 
-  store result in Supabase predictions table
-- If OpenWeatherMap call fails: log the error, skip the tick, do not crash
+- On each tick: get next row from test.csv (Dec 16 – Jan 2) → scale features → call predict_full → store result + per-appliance actuals in Supabase
 - If Supabase write fails: log the error, skip the tick, do not crash
-- Scheduler only runs for Smart Home tier — Basic tier is always manual input
+- Scheduler replays test split rows chronologically (cycling); no sensor env vars needed
 
 ## Frontend conventions
 - Pure HTML + JavaScript — no React, no Vue, no build step
@@ -231,7 +214,7 @@ Supabase tables for monitoring:
 - dashboard.html — Smart Home tier: shows live auto-updating predictions every 15 minutes
 - forecast.html — 7-day forecast and monthly bill projection
 - app.js makes fetch() calls to the FastAPI API — no direct Supabase calls from frontend
-- All API responses display: predicted Wh, predicted kWh, estimated cost in NGN
+- All API responses display: predicted Wh, predicted kWh, estimated cost in GBP (£)
 - Frontend must be responsive — works on mobile and desktop
 - No authentication for the demo — API is open
 

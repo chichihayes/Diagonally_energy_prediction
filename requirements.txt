@@ -10,10 +10,8 @@ joblib
 python-dotenv
 pytest
 httpx
-prophet
-neuralforecast
+statsforecast
+chronos-forecasting
 torch
 supabase
 apscheduler
-requests
-cachetools

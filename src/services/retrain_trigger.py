@@ -4,6 +4,7 @@ import joblib
 from datetime import datetime, timezone
 import scripts.run_retraining as _retraining_script
 from src.services.database import supabase
+from src.services.data_loader import MODEL_FEATURES
 
 _STATS_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "src", "model", "trained", "training_stats.json"
@@ -12,14 +13,7 @@ _STATS_PATH = os.path.join(
 with open(_STATS_PATH) as _f:
     _stats = json.load(_f)
 
-FULL_FEATURES = [
-    "lights", "T1", "RH_1", "T2", "RH_2", "T3", "RH_3",
-    "T4", "RH_4", "T5", "RH_5", "T6", "RH_6", "T7", "RH_7",
-    "T8", "RH_8", "T9", "RH_9", "T_out", "Press_mm_hg",
-    "RH_out", "Windspeed", "Visibility", "Tdewpoint",
-]
-
-_training_means = {feat: _stats[feat]["mean"] for feat in FULL_FEATURES}
+_training_means = {feat: _stats[feat]["mean"] for feat in MODEL_FEATURES if feat in _stats}
 
 _CLEAN_ROW_THRESHOLD = 2000
 _ANOMALY_RATE_MAX = 0.10
@@ -36,10 +30,18 @@ def check_drift(clean_readings: list[dict]) -> dict:
         )
     deviations = {}
     drifted = []
-    for feature in FULL_FEATURES:
-        rolling_mean = sum(r[feature] for r in clean_readings) / len(clean_readings)
+    for feature in MODEL_FEATURES:
+        if feature not in _training_means:
+            continue
+        values = [r[feature] for r in clean_readings if feature in r]
+        if not values:
+            continue
+        rolling_mean = sum(values) / len(values)
         training_mean = _training_means[feature]
-        deviation = abs(rolling_mean - training_mean) / training_mean * 100
+        if training_mean == 0:
+            deviation = 0.0
+        else:
+            deviation = abs(rolling_mean - training_mean) / abs(training_mean) * 100
         deviations[feature] = round(deviation, 4)
         if deviation > 15:
             drifted.append(feature)

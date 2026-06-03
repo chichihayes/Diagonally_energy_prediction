@@ -1,63 +1,26 @@
 import pandas as pd
 
-_SIMPLE_FEATURES = ["lights", "T1", "T_out", "RH_out", "Windspeed", "Visibility", "Tdewpoint"]
+from src.services.data_loader import MODEL_FEATURES
 
-_FULL_COLS = [
-    "lights", "T1", "RH_1", "T2", "RH_2", "T3", "RH_3", "T4", "RH_4",
-    "T5", "RH_5", "T6", "RH_6", "T7", "RH_7", "T8", "RH_8", "T9", "RH_9",
-    "T_out", "Press_mm_hg", "RH_out", "Windspeed", "Visibility", "Tdewpoint",
+_LAG_COLS = [
+    "lag_1", "lag_6", "lag_144", "lag_1008",
+    "rolling_mean_6", "rolling_mean_144", "rolling_std_6",
 ]
 
 
-def build_simple_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    return df[_SIMPLE_FEATURES], df["Appliances"]
-
-
-def build_full_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    return df[_FULL_COLS], df["Appliances"]
-
-
-def assemble_simple_features(lights: int, T1: float, weather: dict) -> dict:
-    return {
-        "lights": lights,
-        "T1": T1,
-        "T_out": weather["T_out"],
-        "RH_out": weather["RH_out"],
-        "Windspeed": weather["Windspeed"],
-        "Visibility": weather["Visibility"],
-        "Tdewpoint": weather["Tdewpoint"],
-    }
-
-
 def build_lag_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    series = df["Appliances"].copy()
-    lags = pd.DataFrame({
-        "lag_1h": series.shift(6),
-        "lag_24h": series.shift(144),
-        "lag_168h": series.shift(1008),
-        "rolling_mean_3h": series.shift(1).rolling(18).mean(),
-        "rolling_mean_24h": series.shift(1).rolling(144).mean(),
-    }, index=df.index)
-    combined = lags.join(series).dropna()
-    return combined.drop("Appliances", axis=1), combined["Appliances"]
+    """Extract lag/rolling features and aggregate_wh target from a preprocessed df."""
+    present = [c for c in _LAG_COLS if c in df.columns]
+    X = df[present].copy()
+    y = df["aggregate_wh"].copy()
+    combined = X.join(y).dropna()
+    return combined.drop("aggregate_wh", axis=1), combined["aggregate_wh"]
 
 
-def assemble_full_features(lights: int, sensors: dict, weather: dict) -> dict:
-    return {
-        "lights": lights,
-        "T1": sensors["T1"],   "RH_1": sensors["RH_1"],
-        "T2": sensors["T2"],   "RH_2": sensors["RH_2"],
-        "T3": sensors["T3"],   "RH_3": sensors["RH_3"],
-        "T4": sensors["T4"],   "RH_4": sensors["RH_4"],
-        "T5": sensors["T5"],   "RH_5": sensors["RH_5"],
-        "T6": sensors["T6"],   "RH_6": sensors["RH_6"],
-        "T7": sensors["T7"],   "RH_7": sensors["RH_7"],
-        "T8": sensors["T8"],   "RH_8": sensors["RH_8"],
-        "T9": sensors["T9"],   "RH_9": sensors["RH_9"],
-        "T_out": weather["T_out"],
-        "Press_mm_hg": weather["Press_mm_hg"],
-        "RH_out": weather["RH_out"],
-        "Windspeed": weather["Windspeed"],
-        "Visibility": weather["Visibility"],
-        "Tdewpoint": weather["Tdewpoint"],
-    }
+def build_model_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """Return all MODEL_FEATURES and aggregate_wh target from a preprocessed df."""
+    present = [c for c in MODEL_FEATURES if c in df.columns]
+    X = df[present].copy()
+    y = df["aggregate_wh"].copy()
+    combined = X.join(y).dropna()
+    return combined.drop("aggregate_wh", axis=1), combined["aggregate_wh"]

@@ -1,50 +1,59 @@
 # docs/decisions.md — Diagonally Energy Prediction
 
 ## ADR-001: Six regression models evaluated for Layer 1
-Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees and Ridge Regression 
-all trained and evaluated on same feature sets. Best R² on held-out test split 
-saved as final model. This approach ensures we pick the objectively best model 
-rather than assuming one will win.
+Random Forest, XGBoost, LightGBM, CatBoost, Extra Trees and Ridge Regression
+all trained and evaluated on the same feature set (time features + lag features).
+Best R² on held-out test split saved as final model.
 
-## ADR-002: Five time series models evaluated for Layer 2
-Prophet, XGBoost with lag features, LightGBM with lag features, LSTM and TFT 
-(Temporal Fusion Transformer) all trained and evaluated. Best MAPE on held-out 
-test split saved as model_forecast.joblib. TFT is state of the art for time 
-series — included to maximise forecast accuracy.
+## ADR-002: Three time series models evaluated for Layer 2
+Chronos-Bolt (Small), MSTL, and XGBoost with lag features all trained and
+evaluated. Best MAPE on held-out test split saved as model_forecast.joblib.
+Chronos-Bolt is a zero-shot pre-trained transformer from Amazon — no fine-tuning
+required, strong out-of-the-box on household energy data.
 
-## ADR-003: TFT and LSTM via neuralforecast library
-neuralforecast provides a unified scikit-learn style API for neural time series 
-models including TFT and LSTM. Chosen over raw PyTorch to reduce boilerplate 
-and keep training code consistent across all five forecast models.
+## ADR-003: MSTL via statsforecast
+statsforecast's MSTL (Multiple Seasonal-Trend decomposition using LOESS) handles
+the daily (6 × 10-min = 1-hour, 144 × 10-min = 24-hour) seasonalities present
+in household energy data. Lightweight and interpretable.
 
-## ADR-004: Two separate regression models saved
-model_full.joblib trained on 25 features for Smart Home tier.
-model_simple.joblib trained on 7 features for Basic tier.
-Basic tier users have no sensors — simpler model gives meaningful predictions 
-without requiring all 25 inputs.
+## ADR-004: Single regression model (full tier only)
+REFIT data has no room temperature or humidity sensors — the feature set is
+purely time-based and lag-based. There is no "simple" vs "full" tier distinction.
+model_full.joblib is trained on all 13 MODEL_FEATURES.
 
-## ADR-005: rv1 and rv2 dropped at preprocessing
-Random noise variables added by dataset authors to test model robustness. 
-No predictive value — confirmed by feature importance across all models.
+## ADR-005: Unix column dropped at preprocessing
+The Unix timestamp is converted to a UK-local datetime index during loading;
+the raw integer column is then discarded.
 
-## ADR-006: OpenWeatherMap free tier for outside weather
-Supplies T_out, RH_out, Windspeed, Visibility, Tdewpoint, Press_mm_hg 
-automatically. Responses cached 10 minutes to keep predictions under 2 seconds 
-and stay within free tier rate limits.
+## ADR-006: REFIT Smart Home Dataset — House 1
+Covers Oct 9 2013 – Jan 2 2014 with 8-second readings for 9 individual
+appliances. Chosen over UCI Appliances Energy because it provides per-appliance
+granularity (Fridge, Freezers, Washing Machine, etc.) and is a UK household,
+consistent with GBP tariff.
 
-## ADR-007: Prophet confidence intervals for bill projection
-Monthly bill returned as optimistic (yhat_lower), most likely (yhat) and 
-pessimistic (yhat_upper) range. Homeowners get a realistic picture rather than 
-a single number that may mislead them.
+## ADR-007: Confidence intervals for bill projection
+Monthly bill returned as optimistic (yhat_lower), most likely (yhat) and
+pessimistic (yhat_upper). Homeowners get a realistic range rather than a
+single number.
 
-## ADR-008: APScheduler runs inside FastAPI process
-Chosen over a separate cron job or Celery worker to keep deployment simple for 
-the demo. Submits Smart Home readings every 15 minutes automatically on startup.
+## ADR-008: APScheduler replays test split rows
+Scheduler iterates chronologically through test.csv (Dec 16 – Jan 2) instead of
+reading live sensors. This gives a deterministic, reproducible demo without
+requiring real Zigbee hardware.
 
 ## ADR-009: joblib for all model persistence
-Standard for scikit-learn models. Fast load of numpy arrays. All three models 
-loaded once at startup as singletons — never reloaded per request.
+Standard for scikit-learn models. Fast load of numpy arrays. Models loaded once
+at startup as singletons — never reloaded per request.
 
-## ADR-010: NERC tariff rate in environment variable
-Rate can change without a redeploy. Applied to predicted kWh for both current 
-prediction and monthly bill projection.
+## ADR-010: UK electricity tariff in environment variable
+Rate can change without a redeploy (Ofgem revises quarterly). Applied to
+predicted kWh for both current prediction and monthly bill projection.
+
+## ADR-011: StandardScaler saved as artifact
+Scaler fitted on train split features only, saved as scaler.joblib. Applied to
+features at training time and at inference time (scheduler). Drift detection
+compares unscaled features against unscaled training_stats.json.
+
+## ADR-012: Chronological train/test split — no shuffle
+Train: Oct 9 – Dec 15 2013 (67 days). Test: Dec 16 – Jan 2 2014 (18 days).
+Shuffling would leak future data into training — never allowed for time series.

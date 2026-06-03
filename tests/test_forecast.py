@@ -24,7 +24,7 @@ def _make_mock_prophet_output() -> pd.DataFrame:
 def _make_mock_artifact(yhat=200.0):
     mock_model = MagicMock()
     mock_model.predict.return_value = pd.DataFrame({
-        "ds": pd.date_range("2026-06-01", periods=24, freq="h"),
+        "ds": pd.date_range("2013-12-16", periods=24, freq="h"),
         "yhat": [yhat] * 24,
         "yhat_lower": [yhat * 0.85] * 24,
         "yhat_upper": [yhat * 1.15] * 24,
@@ -36,7 +36,7 @@ def test_forecast_7d_returns_7_element_list():
     from src.model.forecast import forecast_7d
     mock_df = _make_mock_prophet_output()
     with patch("src.model.forecast._model") as mock_model, \
-         patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+         patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
         mock_model.predict.return_value = mock_df
         result = forecast_7d()
     assert len(result["forecast"]) == 7
@@ -46,10 +46,10 @@ def test_forecast_7d_each_row_has_required_keys():
     from src.model.forecast import forecast_7d
     mock_df = _make_mock_prophet_output()
     with patch("src.model.forecast._model") as mock_model, \
-         patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+         patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
         mock_model.predict.return_value = mock_df
         result = forecast_7d()
-    required = {"date", "predicted_wh", "predicted_kwh", "lower_wh", "upper_wh", "estimated_cost_ngn"}
+    required = {"date", "predicted_wh", "predicted_kwh", "lower_wh", "upper_wh", "estimated_cost_gbp"}
     for row in result["forecast"]:
         assert required.issubset(row.keys())
 
@@ -58,7 +58,7 @@ def test_forecast_7d_predicted_kwh_equals_wh_over_1000():
     from src.model.forecast import forecast_7d
     mock_df = _make_mock_prophet_output()
     with patch("src.model.forecast._model") as mock_model, \
-         patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+         patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
         mock_model.predict.return_value = mock_df
         result = forecast_7d()
     for row in result["forecast"]:
@@ -70,7 +70,7 @@ def test_forecast_7d_peak_and_lowest_day_correct():
     mock_df = _make_mock_prophet_output()
     # Row 6 has highest yhat (6600.0), row 0 has lowest yhat (6000.0)
     with patch("src.model.forecast._model") as mock_model, \
-         patch.dict("os.environ", {"ELECTRICITY_TARIFF_NGN_PER_KWH": "68.00"}):
+         patch.dict("os.environ", {"ELECTRICITY_TARIFF_GBP_PER_KWH": "0.34"}):
         mock_model.predict.return_value = mock_df
         result = forecast_7d()
     today = date.today()
@@ -95,19 +95,17 @@ def test_forecast_model_singleton_is_same_object(monkeypatch, tmp_path):
 def test_forecast_24h_returns_24_elements(monkeypatch):
     import src.model.forecast as f_mod
     monkeypatch.setattr(f_mod, "_artifact", _make_mock_artifact())
-    monkeypatch.setattr("src.services.weather.get_weather", lambda loc: {})
-    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
-    result = f_mod.forecast_24h("Lagos")
+    monkeypatch.setenv("ELECTRICITY_TARIFF_GBP_PER_KWH", "0.34")
+    result = f_mod.forecast_24h()
     assert len(result) == 24
 
 
 def test_forecast_24h_each_dict_has_required_keys(monkeypatch):
     import src.model.forecast as f_mod
     monkeypatch.setattr(f_mod, "_artifact", _make_mock_artifact())
-    monkeypatch.setattr("src.services.weather.get_weather", lambda loc: {})
-    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
-    result = f_mod.forecast_24h("Lagos")
-    required = {"ds", "yhat", "yhat_lower", "yhat_upper", "predicted_kwh", "estimated_cost_ngn"}
+    monkeypatch.setenv("ELECTRICITY_TARIFF_GBP_PER_KWH", "0.34")
+    result = f_mod.forecast_24h()
+    required = {"ds", "yhat", "yhat_lower", "yhat_upper", "predicted_kwh", "estimated_cost_gbp"}
     for item in result:
         assert set(item.keys()) == required
 
@@ -115,19 +113,17 @@ def test_forecast_24h_each_dict_has_required_keys(monkeypatch):
 def test_forecast_24h_cost_calculation(monkeypatch):
     import src.model.forecast as f_mod
     monkeypatch.setattr(f_mod, "_artifact", _make_mock_artifact(yhat=1000.0))
-    monkeypatch.setattr("src.services.weather.get_weather", lambda loc: {})
-    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
-    result = f_mod.forecast_24h("Lagos")
+    monkeypatch.setenv("ELECTRICITY_TARIFF_GBP_PER_KWH", "0.34")
+    result = f_mod.forecast_24h()
     assert result[0]["predicted_kwh"] == 1.0
-    assert result[0]["estimated_cost_ngn"] == 68.0
+    assert result[0]["estimated_cost_gbp"] == pytest.approx(0.34)
 
 
 def test_forecast_24h_lower_lte_yhat_lte_upper(monkeypatch):
     import src.model.forecast as f_mod
     monkeypatch.setattr(f_mod, "_artifact", _make_mock_artifact(yhat=300.0))
-    monkeypatch.setattr("src.services.weather.get_weather", lambda loc: {})
-    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
-    result = f_mod.forecast_24h("Lagos")
+    monkeypatch.setenv("ELECTRICITY_TARIFF_GBP_PER_KWH", "0.34")
+    result = f_mod.forecast_24h()
     for item in result:
         assert item["yhat_lower"] <= item["yhat"] <= item["yhat_upper"]
 
@@ -137,7 +133,6 @@ def test_forecast_24h_propagates_model_exception(monkeypatch):
     mock_model = MagicMock()
     mock_model.predict.side_effect = RuntimeError("model crashed")
     monkeypatch.setattr(f_mod, "_artifact", {"model": mock_model, "model_type": "Prophet"})
-    monkeypatch.setattr("src.services.weather.get_weather", lambda loc: {})
-    monkeypatch.setenv("ELECTRICITY_TARIFF_NGN_PER_KWH", "68.00")
+    monkeypatch.setenv("ELECTRICITY_TARIFF_GBP_PER_KWH", "0.34")
     with pytest.raises(RuntimeError, match="model crashed"):
-        f_mod.forecast_24h("Lagos")
+        f_mod.forecast_24h()
