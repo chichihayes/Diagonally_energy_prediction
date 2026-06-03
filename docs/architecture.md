@@ -8,8 +8,6 @@ diagonally-energy-prediction/
 │   ├── raw/                              # House1.csv (REFIT Smart Home Dataset, gitignored)
 │   └── processed/                        # train.csv, test.csv, engineered features + lag features
 ├── frontend/
-│   ├── index.html                        # landing page with tier selection
-│   ├── simple.html                       # Basic tier form and results
 │   ├── dashboard.html                    # Smart Home tier live dashboard
 │   ├── forecast.html                     # 7-day forecast and monthly bill projection
 │   └── assets/

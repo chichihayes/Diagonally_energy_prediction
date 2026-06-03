@@ -45,6 +45,15 @@ predicted kWh for both current prediction and monthly bill projection.
 Train: Oct 9 – Dec 15 2013 (67 days). Test: Dec 16 – Jan 2 2014 (18 days).
 Shuffling would leak future data into training — never allowed for time series.
 
+## ADR-011: Regression model layer removed — forecast-only architecture
+The original design had two regression model layers (full: 25 features, simple: 7 features)
+that predicted aggregate Wh from live sensor inputs via POST /predict/full and POST /predict/simple.
+These were removed in the REFIT migration because: (1) the REFIT dataset has no live sensor
+inputs — it is appliance-level Wh readings, not room temperature/humidity; (2) the
+scheduler-replay architecture means no live inference path is needed; (3) only the time
+series forecast model (Chronos-Bolt/MSTL/XGBoost) is needed for the 24h and 7d forecast
+endpoints. The retraining pipeline was repurposed to retrain only the forecast model.
+
 ## ADR-013: Retraining uses MAPE comparison for forecast model
 When retraining is triggered, the new forecast model is only deployed if its
 MAPE on the held-out test split is strictly lower than the current model's MAPE

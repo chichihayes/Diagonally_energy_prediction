@@ -18,7 +18,7 @@
 
   <!-- Hero Card -->
   <section id="hero-card" class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6 mb-6 animate-pulse">
-    <h1 class="text-lg font-semibold text-gray-700 mb-4">Current Prediction</h1>
+    <h1 class="text-lg font-semibold text-gray-700 mb-4">Current Reading</h1>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">Wh</p>
@@ -29,7 +29,7 @@
         <p id="predicted-kwh" class="text-2xl font-bold text-indigo-600">—</p>
       </div>
       <div>
-        <p class="text-xs text-gray-500 uppercase tracking-wide">Est. Cost</p>
+        <p class="text-xs text-gray-500 uppercase tracking-wide">Est. Cost (GBP)</p>
         <p id="estimated-cost" class="text-2xl font-bold text-green-600">—</p>
       </div>
       <div>
@@ -39,54 +39,45 @@
     </div>
   </section>
 
-  <!-- Sensor Grid -->
+  <!-- Per-Appliance Breakdown -->
   <section class="max-w-2xl mx-auto mb-6">
-    <h2 class="text-base font-semibold text-gray-700 mb-3">Room Conditions</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3" id="sensor-grid">
-      <div data-room="1" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 1</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+    <h2 class="text-base font-semibold text-gray-700 mb-3">Appliance Breakdown</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3" id="appliance-grid">
+      <div data-appliance="fridge_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Fridge</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="2" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 2</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="chest_freezer_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Chest Freezer</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="3" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 3</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="upright_freezer_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Upright Freezer</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="4" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 4</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="tumble_dryer_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Tumble Dryer</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="5" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 5</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="washing_machine_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Washing Machine</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="6" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 6</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="dishwasher_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Dishwasher</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="7" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 7</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="computer_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Computer</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="8" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 8</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="television_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Television</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
-      <div data-room="9" class="bg-white rounded-xl shadow p-4">
-        <p class="font-medium text-gray-600 mb-2">Room 9</p>
-        <p class="text-sm text-gray-500">Temp: <span class="room-temp font-semibold">—</span> °C</p>
-        <p class="text-sm text-gray-500">Humidity: <span class="room-humidity font-semibold">—</span> %</p>
+      <div data-appliance="electric_heater_wh" class="bg-white rounded-xl shadow p-4">
+        <p class="font-medium text-gray-600 mb-1">Electric Heater</p>
+        <p class="text-sm text-gray-500"><span class="appliance-wh font-semibold text-indigo-600">—</span> Wh</p>
       </div>
     </div>
   </section>
@@ -100,47 +91,20 @@
 
   <!-- Recent Predictions Table -->
   <section id="history-table-section" class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6 mb-6">
-    <h2 class="text-base font-semibold text-gray-700 mb-3">Recent Predictions</h2>
+    <h2 class="text-base font-semibold text-gray-700 mb-3">Recent Readings</h2>
     <table id="history-table" class="w-full text-sm border-collapse">
       <thead>
         <tr class="text-left border-b">
           <th class="py-1 pr-4">Time</th>
           <th class="py-1 pr-4">Wh</th>
           <th class="py-1 pr-4">kWh</th>
-          <th class="py-1">Cost (NGN)</th>
+          <th class="py-1">Cost (GBP)</th>
         </tr>
       </thead>
       <tbody id="history-table-body">
         <tr><td colspan="4" class="py-2 text-gray-500">Loading…</td></tr>
       </tbody>
     </table>
-  </section>
-
-  <!-- Outside Conditions Strip -->
-  <section class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6">
-    <h2 class="text-base font-semibold text-gray-700 mb-3">Outside Conditions</h2>
-    <div class="flex flex-wrap gap-6 text-center">
-      <div>
-        <p class="text-xs text-gray-500 uppercase tracking-wide">Temp (°C)</p>
-        <p id="w-t-out" class="font-semibold text-gray-700">—</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500 uppercase tracking-wide">Humidity (%)</p>
-        <p id="w-rh-out" class="font-semibold text-gray-700">—</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500 uppercase tracking-wide">Wind (m/s)</p>
-        <p id="w-windspeed" class="font-semibold text-gray-700">—</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500 uppercase tracking-wide">Visibility (km)</p>
-        <p id="w-visibility" class="font-semibold text-gray-700">—</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500 uppercase tracking-wide">Dew Point (°C)</p>
-        <p id="w-tdewpoint" class="font-semibold text-gray-700">—</p>
-      </div>
-    </div>
   </section>
 
   <script src="assets/app.js"></script>

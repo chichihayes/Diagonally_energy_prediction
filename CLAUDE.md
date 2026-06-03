@@ -56,8 +56,6 @@ diagonally-energy-prediction/
 │   └── processed/                        # cleaned and engineered features + lag features
 ├── notebooks/                            # EDA, model comparison, feature importance
 ├── frontend/
-│   ├── index.html                        # landing page with tier selection
-│   ├── simple.html                       # Basic tier form and results
 │   ├── dashboard.html                    # Smart Home tier live dashboard
 │   ├── forecast.html                     # 7-day forecast and weekly bill projection
 │   └── assets/
@@ -72,7 +70,9 @@ diagonally-energy-prediction/
 │   │   ├── evaluate.py                   # write_leaderboard helper
 │   │   ├── forecast.py                   # load forecast model singleton and return predictions
 │   │   └── trained/
-│   │       └── model_forecast.joblib     # best time series model
+│   │       ├── model_forecast.joblib     # best time series model (gitignored)
+│   │       ├── forecast_leaderboard.json # MAPE/MAE/RMSE for all 3 trained models
+│   │       └── training_stats.json       # per-feature mean + std from train split
 │   └── services/
 │       ├── features.py                   # build_lag_matrix for forecast training
 │       ├── data_loader.py                # load and preprocess House1.csv
@@ -153,8 +153,8 @@ Retraining Trigger — 3 conditions must ALL be true:
 - Reset clean row counter and drift flag after retraining
 
 Supabase tables for monitoring:
-- anomalies: id, timestamp, features (JSONB), z_scores (JSONB), flagged_features, low_confidence_prediction
-- drift_log: id, timestamp, feature, training_mean, rolling_mean, deviation_pct
+- anomalies: id, timestamp, features (JSONB — MODEL_FEATURES dict), z_scores (JSONB), flagged_features (text[])
+- drift_log: id, timestamp, drift_detected (bool), drifted_features (text[]), deviations (JSONB — feature→pct), clean_row_count (int)
 - retrain_log: id, timestamp, trigger_reason, old_mape, new_mape, model_replaced (bool), rows_used
 
 ## Database conventions
@@ -187,10 +187,8 @@ Supabase tables for monitoring:
 ## Frontend conventions
 - Pure HTML + JavaScript — no React, no Vue, no build step
 - Tailwind CSS via CDN for styling
-- index.html — landing page with tier selection
-- simple.html — Basic tier form: lights input + T1 input + location input
-- dashboard.html — Smart Home tier: shows live auto-updating predictions every 15 minutes
-- forecast.html — 7-day forecast and weekly bill projection
+- dashboard.html — Smart Home tier: live per-appliance breakdown + 24h history chart, auto-refreshes every 15 minutes
+- forecast.html — 24h/7d forecast charts + weekly bill projection (GBP) + model leaderboard
 - app.js makes fetch() calls to the FastAPI API — no direct Supabase calls from frontend
 - All API responses display: predicted Wh, predicted kWh, estimated cost in GBP (£)
 - Frontend must be responsive — works on mobile and desktop

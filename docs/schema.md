@@ -169,11 +169,9 @@ Scaler saved as `src/model/trained/scaler.joblib`.
 |---|---|---|
 | id | uuid | Primary key |
 | timestamp | timestamptz | — |
-| tier | text | Always `'full'` |
-| input_features | jsonb | Unscaled MODEL_FEATURES |
+| features | jsonb | Unscaled MODEL_FEATURES dict for the flagged reading |
 | z_scores | jsonb | Z-Score per feature |
 | flagged_features | text[] | Features where abs(Z) > 3 |
-| low_confidence_prediction | bool | Always true |
 
 ---
 
