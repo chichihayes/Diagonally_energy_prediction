@@ -73,7 +73,7 @@ diagonally-energy-prediction/
 │   │       └── training_stats.json       # appliance mean + std from train split
 │   └── services/
 │       ├── features.py                   # build_lag_matrix for forecast training
-│       ├── data_loader.py                # load and preprocess House1.csv
+│       ├── data_loader.py                # load and preprocess House_1.csv
 │       ├── cost.py                       # Wh to GBP conversion + weekly bill projection
 │       ├── database.py                   # Supabase insert and retrieve readings and forecasts
 │       └── monitor.py                    # Z-Score anomaly detection on appliance values

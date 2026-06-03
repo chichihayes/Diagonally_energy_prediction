@@ -56,6 +56,15 @@ scheduler-replay architecture means no live inference path is needed; (3) only t
 series forecast model (Chronos-Bolt/MSTL/XGBoost) is needed for the 24h and 7d forecast
 endpoints. The retraining pipeline was repurposed to retrain only the forecast model.
 
+## ADR-014: IQR outlier capping removed from preprocessing
+`_cap_outliers_iqr` was removed from `preprocess()` in `data_loader.py`. When more
+than 75% of 10-minute resampled values are zero (TumbleDryer, WashingMachine,
+Dishwasher, Computer, Television), Q1=Q3=0, IQR=0, and clip([0,0]) silently
+destroys all real readings. The three forecast models (Chronos-Bolt, MSTL, XGBoost)
+are robust to outliers and train on aggregate_wh — IQR capping offers no benefit
+and introduces significant bias for sparse appliances. `clip(lower=0)` is retained
+to remove unphysical negative sensor readings.
+
 ## ADR-013: Retraining uses MAPE comparison for forecast model
 When retraining is triggered, the new forecast model is only deployed if its
 MAPE on the held-out test split is strictly lower than the current model's MAPE
