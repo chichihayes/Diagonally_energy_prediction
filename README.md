@@ -6,8 +6,8 @@ ML system that predicts household appliance energy consumption for a UK home usi
 
 ## What it does
 
-- Trains three time series forecast models (Chronos-Bolt Small, MSTL, XGBoost with lag features)
-  on 9-appliance aggregate consumption data and selects the best by MAPE
+- Trains a Random Forest forecast model (300 trees, depth 10, 11 features including temperature)
+  on 9-appliance aggregate consumption data, evaluated on 9 strategic test days (~19% MAPE)
 - Runs an APScheduler background job every 15 minutes replaying the held-out test split
   (Dec 16 – Jan 2 2014), storing per-appliance actuals and estimated GBP cost in Supabase
 - Serves a REST API for 24-hour and 7-day forecasts, prediction history, model leaderboard,
@@ -25,7 +25,7 @@ ML system that predicts household appliance energy consumption for a UK home usi
 |---|---|
 | Language | Python 3.11 |
 | API | FastAPI + Uvicorn |
-| Models | Chronos-Bolt (Small), MSTL, XGBoost with lag features |
+| Models | Random Forest with temperature features (scikit-learn) |
 | Data | pandas, numpy, scikit-learn |
 | Model persistence | joblib |
 | Dataset | REFIT Smart Home Dataset — House 1 |
@@ -53,8 +53,8 @@ Place the REFIT House1.csv dataset at `data/raw/House1.csv` before training.
 python scripts/run_training_forecast.py
 ```
 
-This trains all three models, evaluates MAPE on the held-out test split (Dec 16 – Jan 2),
-saves the best model to `src/model/trained/model_forecast.joblib`, and writes
+This trains Random Forest on all data minus 9 strategic test days, evaluates MAE/RMSE/MAPE
+on those 9 days, saves the model to `src/model/trained/model_forecast.joblib`, and writes
 `src/model/trained/forecast_leaderboard.json`.
 
 ## Run the API
@@ -78,7 +78,7 @@ pytest tests/
 | GET | `/api/v1/predictions` | Stored prediction history (filterable by tier, limit, since) |
 | GET | `/api/v1/forecast/24h` | Hourly consumption forecast for the next 24 hours |
 | GET | `/api/v1/forecast/7d` | Daily forecast for next 7 days + weekly bill projection |
-| GET | `/api/v1/models/leaderboard` | MAPE/MAE/RMSE scores for all 3 trained models |
+| GET | `/api/v1/models/leaderboard` | MAE/RMSE/MAPE for RandomForest on 9 strategic test days |
 | GET | `/api/v1/monitor/drift` | Latest drift check result |
 | GET | `/api/v1/monitor/retrain` | Latest retraining outcome |
 | GET | `/health` | Health check |
@@ -89,7 +89,6 @@ See [`docs/env.md`](docs/env.md) for the full reference.
 
 ```
 MODEL_PATH_FORECAST=src/model/trained/model_forecast.joblib
-TEST_SPLIT_PATH=data/processed/test.csv
 API_HOST=0.0.0.0
 API_PORT=8000
 SUPABASE_URL=

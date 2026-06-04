@@ -8,7 +8,5 @@ joblib
 python-dotenv
 pytest
 httpx
-statsforecast
-chronos-forecasting
-torch
+requests
 supabase

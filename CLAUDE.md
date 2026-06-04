@@ -2,30 +2,28 @@
 
 ## What this app is
 Diagonally Energy Prediction is a machine learning system that predicts household
-appliance energy consumption for a UK home using the REFIT Smart Home Dataset (House 1).
+energy consumption for a UK home using the REFIT Smart Home Dataset (House 1).
 It covers 9 individual appliances (Fridge, ChestFreezer, UprightFreezer, TumbleDryer,
 WashingMachine, Dishwasher, Computer, Television, ElectricHeater) over the period
 October 9 2013 – July 10 2015 (638 days, with a 41-day sensor gap in March-April 2014).
 
-The system trains a time series forecast model (Chronos-Bolt, MSTL, or XGBoost with
-lags) to predict future consumption over 24 hours and 7 days.
-
-Actual sensor readings are seeded from the test split into Supabase with per-appliance
-values and estimated electricity cost in GBP (£). Anomaly detection runs on every
-reading to flag unusual appliance consumption. A lightweight HTML + JavaScript frontend
-shows forecast consumption and estimated electricity cost in GBP (£).
+The system trains a RandomForest model on 11 lag/calendar/temperature features to
+predict daily household energy consumption. It serves single-day predictions and
+7-day rolling forecasts via a FastAPI backend. Every prediction is stored in Supabase.
+A lightweight HTML + JavaScript frontend lets users input lag values and see the
+predicted Wh, kWh, and estimated cost in GBP (£).
 
 ## Stack
 - Language: Python 3.11
 - API: FastAPI + Uvicorn
-- Time Series Models: Chronos-Bolt (Small), MSTL, XGBoost with lag features — all trained and evaluated, best MAPE saved as final model
+- Forecast Model: RandomForest (300 trees, depth 10) with 11 features — 16.6% MAPE on 9 strategic test days
 - Data: pandas, numpy, scikit-learn
 - Model persistence: joblib
 - Dataset: REFIT Smart Home Dataset — House 1 (data/raw/House_1.csv, Oct 2013 – Jul 2015, 638 days, 8-second intervals)
 - Frontend: HTML + JavaScript (no framework, no build step) + Tailwind CSS via CDN
-- Database: Supabase (Postgres) — stores actual appliance readings, anomaly events, forecasts
+- Database: Supabase (Postgres) — stores forecast requests (inputs + predictions)
 - Cost calculation: Ofgem UK tariff rate (GBP) applied to predicted kWh
-- Testing: pytest + httpx
+- Testing: pytest
 - CI: GitHub Actions
 
 ## Environment variables
@@ -51,94 +49,73 @@ ELECTRICITY_TARIFF_GBP_PER_KWH=0.34
 ```
 diagonally-energy-prediction/
 ├── data/
-│   ├── raw/                              # original REFIT dataset (House1.csv)
-│   └── processed/                        # cleaned and engineered features + lag features
+│   ├── raw/                              # House_1.csv + temperature_loughborough.csv (gitignored)
+│   └── processed/                        # train.csv and test.csv (gitignored)
 ├── notebooks/                            # EDA, model comparison, feature importance
 ├── frontend/
-│   ├── dashboard.html                    # Smart Home tier live dashboard
-│   ├── forecast.html                     # 7-day forecast and weekly bill projection
+│   ├── dashboard.html                    # placeholder — no backend wired yet
+│   ├── forecast.html                     # single-day prediction form + result card
 │   └── assets/
 │       ├── style.css                     # custom styles
-│       └── app.js                        # API calls and UI logic
+│       └── app.js                        # forecast form logic and API calls
 ├── src/
 │   ├── api/
-│   │   ├── main.py                       # FastAPI app entry point
-│   │   └── routes.py                     # readings and forecast endpoints
+│   │   ├── main.py                       # FastAPI app entry point, mounts /frontend static
+│   │   └── routes.py                     # forecast and evaluation endpoints
 │   ├── model/
-│   │   ├── train_forecast.py             # train all 3 time series models — save best MAPE
-│   │   ├── forecast.py                   # load forecast model singleton and return predictions
+│   │   ├── train_forecast.py             # train RandomForest, evaluate on 9 test days, save model
+│   │   ├── forecast.py                   # forecast model singleton + inference functions
 │   │   └── trained/
-│   │       ├── model_forecast.joblib     # best time series model (gitignored)
-│   │       ├── forecast_leaderboard.json # MAPE/MAE/RMSE for all 3 trained models
-│   │       └── training_stats.json       # appliance mean + std from train split
+│   │       ├── model_forecast.joblib     # trained RandomForest in _TreeWrapper (gitignored)
+│   │       ├── model_evaluation.json     # MAE/RMSE/MAPE + per-day breakdown
+│   │       └── demo_day.json             # held-out demo day features + actual_wh (2015-02-10)
 │   └── services/
 │       ├── features.py                   # build_lag_matrix for forecast training
-│       ├── data_loader.py                # load and preprocess House_1.csv
-│       ├── cost.py                       # Wh to GBP conversion + weekly bill projection
-│       ├── database.py                   # Supabase insert and retrieve readings and forecasts
-│       └── monitor.py                    # Z-Score anomaly detection on appliance values
+│       ├── data_loader.py                # load and preprocess House_1.csv → daily aggregates
+│       ├── cost.py                       # Wh → kWh → GBP conversion
+│       └── database.py                   # Supabase insert helpers (service role key)
 ├── tests/
-│   ├── test_api.py                       # endpoint tests for all routes
-│   ├── test_features.py                  # lag feature tests
-│   ├── test_forecast.py                  # time series forecast tests
-│   ├── test_cost.py                      # cost calculation and bill projection tests
-│   ├── test_database.py                  # Supabase storage tests
-│   └── test_monitor.py                   # Z-Score anomaly detection tests
+│   ├── conftest.py                       # TestClient + mock Supabase setup
+│   ├── test_api.py                       # endpoint tests
+│   ├── test_forecast.py                  # forecast function tests
+│   ├── test_features.py                  # lag matrix tests
+│   ├── test_cost.py                      # Wh → GBP conversion tests
+│   └── test_database.py                  # Supabase insert tests
 ├── scripts/
-│   ├── run_training_forecast.py          # train all time series models, save best forecast model
-│   └── seed_supabase.py                  # seed readings + anomalies from test split into Supabase
+│   ├── run_training_forecast.py          # full offline pipeline: preprocess → train → evaluate
+│   └── seed_supabase.py                  # seed forecast_requests from test split
 └── .github/workflows/
     └── ci.yml                            # run all tests on push to main
 ```
 
 ## ML conventions
 
-Time Series Forecast:
-- Three models trained and evaluated: Chronos-Bolt (Small), MSTL, XGBoost with lag features
-- Evaluation metrics: MAE, RMSE, MAPE on held-out test split
-- Best MAPE model saved as model_forecast.joblib
-- Leaderboard saved as src/model/trained/forecast_leaderboard.json
-- All models trained on aggregate_wh time series from train split
-- Forecast horizons: 24 hours ahead (hourly) and 7 days ahead (daily)
-- All forecast models return: yhat, yhat_lower, yhat_upper (confidence interval)
+Forecast Model:
+- Single model: RandomForest (300 trees, depth 10) with 11 features
+- Features: day_of_week, month, is_weekend, lag_1, lag_7, rolling_mean_7, heater_lag_1, heater_lag_7, heater_rolling_mean_7, temp_mean_c, temp_min_c
+- Trained on all data minus 9 strategic test days (3 LOW / 3 MID / 3 HIGH) and 1 demo day
+- Evaluation: MAE, RMSE, MAPE on 9 strategic test days — 16.6% MAPE, results stored per-day
+- Model saved as model_forecast.joblib (wrapped in _TreeWrapper); metrics in model_evaluation.json
+- Forecast horizons: single day (POST /forecast/predict) and 7 days ahead (GET /forecast/7d)
+- Confidence interval: ±15% of predicted_wh (lower_wh = ×0.85, upper_wh = ×1.15)
 - Never expose raw model output to the API — always format into clean JSON
-- forecast.py loads best model once at startup as a singleton
+- forecast.py loads the model once at startup as a singleton
 - Retrain by running scripts/run_training_forecast.py — never retrain inside the API
 
-Layer 2 — Bill Estimation (No Model):
+Weekly Bill Estimation:
 - Pure calculation — no ML model involved
 - Formula: projected_week_bill = sum(7-day forecast_kwh) × ELECTRICITY_TARIFF_GBP_PER_KWH
-- No extrapolation — 7-day forecast covers exactly 7 days; result is the actual 7-day cost in GBP
-- Return optimistic (lower_wh), pessimistic (upper_wh) and most likely (predicted_wh) weekly bill projections
+- Return optimistic (lower_wh), most_likely (predicted_wh), pessimistic (upper_wh) weekly bill
 - Always read tariff from ELECTRICITY_TARIFF_GBP_PER_KWH environment variable
 - Round all GBP values to 2 decimal places
 - Response key: projected_week_bill with fields: optimistic_gbp, most_likely_gbp, pessimistic_gbp, period ("7 days")
 
-## Monitoring conventions
-
-Anomaly Detection — Z-Score (on every reading):
-- Formula: Z = (new_value - training_mean) / training_std
-- Training mean and std calculated once from train split and saved as appliance_stats in training_stats.json
-- Check all 9 appliances plus aggregate_wh on every reading
-- |Z| > 3 on ANY appliance → reading flagged as anomaly
-- Anomalous readings stored in Supabase anomalies table
-- All readings stored in readings table regardless of anomaly status
-- Z > 0 → direction HIGH ("consuming more than normal")
-- Z < 0 → direction LOW ("consuming less than normal")
-- appliance_stats structure: {"Fridge": {"mean": float, "std": float}, ...}
-- overnight_thresholds also stored in training_stats.json for the 6 active appliances
-
-Supabase tables for monitoring:
-- anomalies: id, timestamp, appliance_values (JSONB), z_scores (JSONB), flagged_appliances (JSONB)
-
 ## Database conventions
 - Always use supabase-py client — never raw psycopg2
-- DB reads: supabase.table('readings').select('*').execute()
-- DB writes: supabase.table('readings').insert({}).execute()
-- RLS enabled on all tables — every request must pass the correct key
-- readings table stores: id, timestamp, aggregate_wh, fridge_wh, chest_freezer_wh,
-  upright_freezer_wh, tumble_dryer_wh, washing_machine_wh, dishwasher_wh,
-  computer_wh, television_wh, electric_heater_wh, estimated_cost_gbp
+- Always use SUPABASE_SERVICE_ROLE_KEY for writes (bypasses RLS)
+- DB writes: supabase.table('forecast_requests').insert({}).execute()
+- RLS enabled on all tables
+- forecast_requests table stores: id, created_at, input_date, lag inputs, temp inputs, predicted_wh, predicted_kwh, estimated_cost_gbp
 - Never store raw model files or training data in Supabase
 
 ## Cost calculation conventions
@@ -151,10 +128,11 @@ Supabase tables for monitoring:
 ## Frontend conventions
 - Pure HTML + JavaScript — no React, no Vue, no build step
 - Tailwind CSS via CDN for styling
-- dashboard.html — Smart Home tier: live per-appliance breakdown + 24h history chart, auto-refreshes every 15 minutes
-- forecast.html — 24h/7d forecast charts + weekly bill projection (GBP) + model leaderboard
+- forecast.html — single-day prediction form (all 11 features visible), result card shows Wh, kWh, cost, temperature
+- dashboard.html — placeholder, no backend wired yet
 - app.js makes fetch() calls to the FastAPI API — no direct Supabase calls from frontend
 - All API responses display: predicted Wh, predicted kWh, estimated cost in GBP (£)
+- Frontend is served as static files via FastAPI at /frontend — no separate server needed
 - Frontend must be responsive — works on mobile and desktop
 - No authentication for the demo — API is open
 

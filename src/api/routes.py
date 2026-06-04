@@ -1,59 +1,34 @@
 import json
 import pathlib
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from src.services import database
-from src.model.forecast import forecast_24h as _forecast_24h, forecast_7d
+from src.model.forecast import forecast_7d, forecast_single_day
 
 router = APIRouter(prefix="/api/v1")
 
-_FORECAST_LEADERBOARD_PATH = pathlib.Path("src/model/trained/forecast_leaderboard.json")
+_MODEL_EVALUATION_PATH = pathlib.Path("src/model/trained/model_evaluation.json")
 
 
-@router.get("/readings")
-def get_readings_route(
-    limit: int = Query(default=20, ge=1, le=50),
-    since: datetime | None = Query(default=None),
-):
-    since_str = since.isoformat() if since is not None else None
-    return database.get_readings(limit=limit, since=since_str)
+# ---------------------------------------------------------------------------
+# Leaderboard (backend / CEO visibility)
+# ---------------------------------------------------------------------------
 
-
-@router.get("/models/leaderboard")
-def get_leaderboard():
-    if not _FORECAST_LEADERBOARD_PATH.exists():
+@router.get("/models/evaluation")
+def get_model_evaluation():
+    if not _MODEL_EVALUATION_PATH.exists():
         raise HTTPException(
             status_code=503,
-            detail="Leaderboard not available — run training scripts first",
+            detail="Evaluation not available — run scripts/run_training_forecast.py first",
         )
-    return {"forecast": json.loads(_FORECAST_LEADERBOARD_PATH.read_text())}
+    return json.loads(_MODEL_EVALUATION_PATH.read_text())
 
 
-@router.get("/forecast/24h")
-async def get_forecast_24h():
-    try:
-        raw = _forecast_24h()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-    items = [
-        {
-            "hour": entry["ds"],
-            "predicted_wh": entry["yhat"],
-            "predicted_kwh": entry["predicted_kwh"],
-            "lower_wh": entry["yhat_lower"],
-            "upper_wh": entry["yhat_upper"],
-            "estimated_cost_gbp": entry["estimated_cost_gbp"],
-        }
-        for entry in raw
-    ]
-
-    peak_hour = max(items, key=lambda x: x["predicted_wh"])["hour"]
-    lowest_hour = min(items, key=lambda x: x["predicted_wh"])["hour"]
-
-    return {"forecast": items, "peak_hour": peak_hour, "lowest_hour": lowest_hour}
-
+# ---------------------------------------------------------------------------
+# 7-day rolling forecast (seed-based, no user input)
+# ---------------------------------------------------------------------------
 
 @router.get("/forecast/7d")
 def get_forecast_7d():
@@ -62,8 +37,59 @@ def get_forecast_7d():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return {
-        "forecast": result["forecast"],
-        "peak_day": result["peak_day"],
-        "lowest_day": result["lowest_day"],
+        "forecast":            result["forecast"],
+        "peak_day":            result["peak_day"],
+        "lowest_day":          result["lowest_day"],
         "projected_week_bill": result["projected_week_bill"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Single-day prediction from user-supplied features
+# ---------------------------------------------------------------------------
+
+class ForecastPredictRequest(BaseModel):
+    date: str
+    lag_1: float
+    lag_7: float
+    rolling_mean_7: float
+    heater_lag_1: float
+    heater_lag_7: float
+    heater_rolling_mean_7: float
+    temp_mean_c: float | None = None
+    temp_min_c: float | None = None
+
+
+@router.post("/forecast/predict")
+def forecast_predict(body: ForecastPredictRequest):
+    try:
+        result = forecast_single_day(
+            date_str=body.date,
+            lag_1=body.lag_1,
+            lag_7=body.lag_7,
+            rolling_mean_7=body.rolling_mean_7,
+            heater_lag_1=body.heater_lag_1,
+            heater_lag_7=body.heater_lag_7,
+            heater_rolling_mean_7=body.heater_rolling_mean_7,
+            temp_mean_c=body.temp_mean_c,
+            temp_min_c=body.temp_min_c,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    database.insert_forecast_request({
+        "input_date":            result["date"],
+        "lag_1":                 body.lag_1,
+        "lag_7":                 body.lag_7,
+        "rolling_mean_7":        body.rolling_mean_7,
+        "heater_lag_1":          body.heater_lag_1,
+        "heater_lag_7":          body.heater_lag_7,
+        "heater_rolling_mean_7": body.heater_rolling_mean_7,
+        "temp_mean_c":           result["temp_mean_c"],
+        "temp_min_c":            result["temp_min_c"],
+        "predicted_wh":          result["predicted_wh"],
+        "predicted_kwh":         result["predicted_kwh"],
+        "estimated_cost_gbp":    result["estimated_cost_gbp"],
+    })
+
+    return result

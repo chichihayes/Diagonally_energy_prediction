@@ -4,206 +4,193 @@ import logging
 import joblib
 import numpy as np
 import pandas as pd
-from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestRegressor
 
-from src.services.data_loader import load_and_split
+from src.services.data_loader import MODEL_FEATURES, _UK_MONTHLY_TEMPS, TEST_DATES, DEMO_DATE
 from src.services.features import build_lag_matrix
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_HORIZON = 24  # hours ahead
-
 
 # ---------------------------------------------------------------------------
-# Evaluation helpers
+# Metrics
 # ---------------------------------------------------------------------------
 
 def _mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(np.abs(y_true - y_pred)))
 
-
 def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
-
 def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     mask = y_true != 0
-    if not mask.any():
-        return float("inf")
     return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
 
 
 # ---------------------------------------------------------------------------
-# Model trainers
+# Temperature forecast helper
 # ---------------------------------------------------------------------------
 
-def _train_xgb_lags(train_df: pd.DataFrame, test_df: pd.DataFrame):
-    X_train, y_train = build_lag_matrix(train_df)
-    X_test, y_test = build_lag_matrix(test_df)
-    model = XGBRegressor(n_jobs=-1, random_state=42, verbosity=0)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    y_true = y_test.values
-    return model, _mae(y_true, y_pred), _rmse(y_true, y_pred), _mape(y_true, y_pred)
-
-
-def _train_mstl(train_df: pd.DataFrame, test_df: pd.DataFrame):
-    from statsforecast import StatsForecast
-    from statsforecast.models import MSTL, AutoARIMA
-
-    series = train_df["aggregate_wh"].copy()
-    # MSTL requires a nixtla-format dataframe
-    sf_train = pd.DataFrame({
-        "unique_id": "house1",
-        "ds": series.index,
-        "y": series.values,
-    })
-    model = StatsForecast(
-        models=[MSTL(season_length=[6, 144])],  # 1-hour (6x10min), 24-hour (144x10min)
-        freq="10min",
-    )
-    model.fit(sf_train)
-    forecast = model.predict(h=len(test_df))
-    y_pred = forecast["MSTL"].values[: len(test_df)]
-    y_true = test_df["aggregate_wh"].values[: len(y_pred)]
-    return model, _mae(y_true, y_pred), _rmse(y_true, y_pred), _mape(y_true, y_pred)
-
-
-def _train_chronos(train_df: pd.DataFrame, test_df: pd.DataFrame):
+def _fetch_forecast_temps(dates: list) -> list[tuple[float, float]]:
+    """Fetch temperature from Open-Meteo for given dates (forecast or historical)."""
     try:
-        from chronos import ChronosPipeline
-        import torch
-    except ImportError:
-        raise ImportError("chronos-forecasting not installed — run: pip install chronos-forecasting")
-
-    pipeline = ChronosPipeline.from_pretrained(
-        "amazon/chronos-bolt-small",
-        device_map="cpu",
-        torch_dtype=torch.float32,
-    )
-    context = torch.tensor(
-        train_df["aggregate_wh"].values, dtype=torch.float32
-    ).unsqueeze(0)
-    forecast = pipeline.predict(context, prediction_length=len(test_df))
-    # forecast shape: (num_samples, batch, horizon)
-    median = forecast.median(dim=0).values.squeeze(0).numpy()
-    y_pred = median[: len(test_df)]
-    y_true = test_df["aggregate_wh"].values[: len(y_pred)]
-
-    # Store context for later inference
-    class _ChronosWrapper:
-        def __init__(self, pipe, context_arr):
-            self.pipe = pipe
-            self.context = context_arr
-
-        def predict(self, future: pd.DataFrame) -> pd.DataFrame:
-            import torch as _torch
-            ctx = _torch.tensor(self.context, dtype=_torch.float32).unsqueeze(0)
-            fc = self.pipe.predict(ctx, prediction_length=len(future))
-            med = fc.median(dim=0).values.squeeze(0).numpy()
-            ds = future["ds"] if "ds" in future.columns else pd.date_range(
-                start=pd.Timestamp.now(), periods=len(future), freq="h"
-            )
-            result = pd.DataFrame({
-                "ds": ds.values,
-                "yhat": med,
-                "yhat_lower": med * 0.85,
-                "yhat_upper": med * 1.15,
-            })
-            return result
-
-    wrapper = _ChronosWrapper(pipeline, train_df["aggregate_wh"].values)
-    return wrapper, _mae(y_true, y_pred), _rmse(y_true, y_pred), _mape(y_true, y_pred)
+        import requests
+        dates_str = [str(pd.Timestamp(d).date()) for d in dates]
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=52.77&longitude=-1.20"
+            "&daily=temperature_2m_mean,temperature_2m_min"
+            "&timezone=Europe%2FLondon"
+            f"&start_date={min(dates_str)}&end_date={max(dates_str)}"
+        )
+        d = requests.get(url, timeout=10).json()["daily"]
+        temp_map = dict(zip(d["time"], zip(d["temperature_2m_mean"], d["temperature_2m_min"])))
+        return [temp_map.get(s, _UK_MONTHLY_TEMPS[pd.Timestamp(s).month]) for s in dates_str]
+    except Exception:
+        return [_UK_MONTHLY_TEMPS[pd.Timestamp(d).month] for d in dates]
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Recursive multi-step forecast for tree models
+# ---------------------------------------------------------------------------
+
+def _recursive_forecast(
+    model,
+    seed_df: pd.DataFrame,
+    n_steps: int,
+    future_temps: list[tuple[float, float]] | None = None,
+) -> np.ndarray:
+    history        = list(seed_df["aggregate_wh"].values)
+    heater_history = list(seed_df["ElectricHeater"].values)
+    current_time   = seed_df.index[-1] + pd.Timedelta("1D")
+    preds = []
+
+    for step in range(n_steps):
+        dow = current_time.dayofweek
+
+        if future_temps is not None and step < len(future_temps):
+            t_mean, t_min = future_temps[step]
+        else:
+            t_mean, t_min = _UK_MONTHLY_TEMPS[current_time.month]
+
+        row = {
+            "day_of_week":           dow,
+            "month":                 current_time.month,
+            "is_weekend":            int(dow >= 5),
+            "lag_1":                 history[-1],
+            "lag_7":                 history[-7]  if len(history) >= 7  else history[0],
+            "rolling_mean_7":        float(np.mean(history[-7:]))         if len(history) >= 7        else float(np.mean(history)),
+            "heater_lag_1":          heater_history[-1],
+            "heater_lag_7":          heater_history[-7]                   if len(heater_history) >= 7 else heater_history[0],
+            "heater_rolling_mean_7": float(np.mean(heater_history[-7:]))  if len(heater_history) >= 7 else float(np.mean(heater_history)),
+            "temp_mean_c":           t_mean,
+            "temp_min_c":            t_min,
+        }
+        X    = pd.DataFrame([row])[MODEL_FEATURES]
+        pred = max(0.0, float(model.predict(X)[0]))
+        preds.append(pred)
+        history.append(pred)
+        heater_history.append(heater_history[-7] if len(heater_history) >= 7 else heater_history[-1])
+        current_time += pd.Timedelta("1D")
+
+    return np.array(preds)
+
+
+# ---------------------------------------------------------------------------
+# Production wrapper — implements predict(future_df) -> DataFrame
+# ---------------------------------------------------------------------------
+
+class _TreeWrapper:
+    def __init__(self, model, seed_df: pd.DataFrame):
+        self._model   = model
+        self._seed_df = seed_df
+
+    def predict(self, future_df: pd.DataFrame) -> pd.DataFrame:
+        future_temps = _fetch_forecast_temps(future_df["ds"].tolist())
+        raw = _recursive_forecast(self._model, self._seed_df, len(future_df), future_temps)
+        return pd.DataFrame({
+            "ds":          future_df["ds"].values,
+            "yhat":        raw,
+            "yhat_lower":  raw * 0.85,
+            "yhat_upper":  raw * 1.15,
+        })
+
+    def predict_from_features(self, feature_row: dict) -> float:
+        """Single-step prediction from a pre-built 11-feature row."""
+        X = pd.DataFrame([feature_row])[MODEL_FEATURES]
+        return max(0.0, float(self._model.predict(X)[0]))
+
+
+# ---------------------------------------------------------------------------
+# Entry point — reads from data/processed/ CSVs built by save_processed_splits()
 # ---------------------------------------------------------------------------
 
 def train_and_save(output_path: str = "src/model/trained/model_forecast.joblib") -> dict:
-    train_df, test_df = load_and_split()
+    train_df = pd.read_csv("data/processed/train.csv", parse_dates=["datetime"]).set_index("datetime")
+    test_df  = pd.read_csv("data/processed/test.csv",  parse_dates=["datetime"]).set_index("datetime")
 
-    results = {}
+    logger.info(
+        "Training RandomForest on %d days, evaluating on %d strategic test days ...",
+        len(train_df), len(test_df),
+    )
 
-    logger.info("Training XGBoost with lag features …")
-    xgb_model, xgb_mae, xgb_rmse, xgb_mape = _train_xgb_lags(train_df, test_df)
-    results["XGBoost_lags"] = {"model": xgb_model, "mae": xgb_mae, "rmse": xgb_rmse, "mape": xgb_mape}
+    X_tr, y_tr = build_lag_matrix(train_df)
+    model = RandomForestRegressor(n_estimators=300, max_depth=10, random_state=42, n_jobs=-1)
+    model.fit(X_tr, y_tr)
 
-    logger.info("Training MSTL …")
-    try:
-        mstl_model, mstl_mae, mstl_rmse, mstl_mape = _train_mstl(train_df, test_df)
-        results["MSTL"] = {"model": mstl_model, "mae": mstl_mae, "rmse": mstl_rmse, "mape": mstl_mape}
-    except Exception as e:
-        logger.warning(f"MSTL training failed: {e}")
+    def _band(wh: float) -> str:
+        return "LOW" if wh < 12_000 else ("MID" if wh < 25_000 else "HIGH")
 
-    logger.info("Training Chronos-Bolt (Small) …")
-    try:
-        chronos_model, ch_mae, ch_rmse, ch_mape = _train_chronos(train_df, test_df)
-        results["Chronos"] = {"model": chronos_model, "mae": ch_mae, "rmse": ch_rmse, "mape": ch_mape}
-    except Exception as e:
-        logger.warning(f"Chronos training failed: {e}")
+    result_rows = []
+    y_true_list: list[float] = []
+    y_pred_list: list[float] = []
+    for d in TEST_DATES:
+        rows = test_df[test_df.index.normalize() == d.normalize()]
+        if rows.empty:
+            logger.warning("Test date %s not found in test.csv — skipping", d.date())
+            continue
+        actual_wh = float(rows["aggregate_wh"].iloc[0])
+        X_row     = rows[MODEL_FEATURES].iloc[0].to_dict()
+        pred_wh   = max(0.0, float(model.predict(pd.DataFrame([X_row]))[0]))
+        y_true_list.append(actual_wh)
+        y_pred_list.append(pred_wh)
+        result_rows.append({
+            "Band":         _band(actual_wh),
+            "Date":         d.strftime("%Y-%m-%d"),
+            "Temp C":       round(float(rows["temp_mean_c"].iloc[0]), 1),
+            "Actual Wh":    round(actual_wh),
+            "Predicted Wh": round(pred_wh),
+            "Error %":      round(abs(pred_wh - actual_wh) / actual_wh * 100, 1),
+        })
 
-    if not results:
-        raise RuntimeError("All forecast models failed to train")
+    y_true = np.array(y_true_list)
+    y_pred = np.array(y_pred_list)
+    mae    = _mae(y_true, y_pred)
+    rmse   = _rmse(y_true, y_pred)
+    mape   = _mape(y_true, y_pred)
 
-    # Select best by MAPE
-    best_name = min(results, key=lambda k: results[k]["mape"])
-    best_entry = results[best_name]
-    logger.info(f"Best model: {best_name}  MAPE={best_entry['mape']:.2f}%")
+    results_df = pd.DataFrame(result_rows).sort_values("Band").reset_index(drop=True)
+    print(results_df.to_string(index=False))
+    print()
+    print(f"  MAE  : {mae:,.0f} Wh")
+    print(f"  RMSE : {rmse:,.0f} Wh")
+    print(f"  MAPE : {mape:.1f}%")
 
-    joblib.dump({"model": best_entry["model"], "model_type": best_name}, output_path)
+    final_model = _TreeWrapper(model, train_df)
+    joblib.dump({"model": final_model, "model_type": "RandomForest"}, output_path)
+    logger.info("Model saved -> %s", output_path)
 
-    # Save leaderboard
-    leaderboard = [
-        {
-            "model": name,
-            "mae": entry["mae"],
-            "rmse": entry["rmse"],
-            "mape": entry["mape"],
-            "winner": name == best_name,
-        }
-        for name, entry in results.items()
-    ]
-    leaderboard_path = output_path.replace("model_forecast.joblib", "forecast_leaderboard.json")
-    with open(leaderboard_path, "w") as f:
-        json.dump(leaderboard, f, indent=2)
+    eval_path = output_path.replace("model_forecast.joblib", "model_evaluation.json")
+    with open(eval_path, "w") as f:
+        json.dump({
+            "model":      "RandomForest",
+            "mae":        mae,
+            "rmse":       rmse,
+            "mape":       mape,
+            "evaluation": "9 strategic test days (3 LOW / 3 MID / 3 HIGH)",
+            "per_day":    sorted(result_rows, key=lambda r: r["Band"]),
+        }, f, indent=2)
+    logger.info("Evaluation saved -> %s", eval_path)
 
-    return {name: entry["mape"] for name, entry in results.items()}
-
-
-def train_and_evaluate(extra_rows: pd.DataFrame = None) -> dict:
-    """Train forecast models, optionally augmented with extra_rows; return best model artifact and MAPE."""
-    train_df, test_df = load_and_split()
-    if extra_rows is not None and len(extra_rows) > 0:
-        train_df = pd.concat([train_df, extra_rows])
-
-    results = {}
-
-    logger.info("Training XGBoost with lag features …")
-    xgb_model, xgb_mae, xgb_rmse, xgb_mape = _train_xgb_lags(train_df, test_df)
-    results["XGBoost_lags"] = {"model": xgb_model, "mae": xgb_mae, "rmse": xgb_rmse, "mape": xgb_mape}
-
-    logger.info("Training MSTL …")
-    try:
-        mstl_model, mstl_mae, mstl_rmse, mstl_mape = _train_mstl(train_df, test_df)
-        results["MSTL"] = {"model": mstl_model, "mae": mstl_mae, "rmse": mstl_rmse, "mape": mstl_mape}
-    except Exception as e:
-        logger.warning(f"MSTL training failed: {e}")
-
-    logger.info("Training Chronos-Bolt (Small) …")
-    try:
-        chronos_model, ch_mae, ch_rmse, ch_mape = _train_chronos(train_df, test_df)
-        results["Chronos"] = {"model": chronos_model, "mae": ch_mae, "rmse": ch_rmse, "mape": ch_mape}
-    except Exception as e:
-        logger.warning(f"Chronos training failed: {e}")
-
-    if not results:
-        raise RuntimeError("All forecast models failed to train")
-
-    best_name = min(results, key=lambda k: results[k]["mape"])
-    best_entry = results[best_name]
-    return {
-        "best_model": {"model": best_entry["model"], "model_type": best_name},
-        "best_mape": best_entry["mape"],
-    }
+    return {"RandomForest": mae}

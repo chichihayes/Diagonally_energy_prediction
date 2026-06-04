@@ -1,129 +1,5 @@
 # docs/api-contracts.md — Diagonally Energy Prediction
 
-## GET /api/v1/predictions
-
-Returns stored prediction history from Supabase ordered by most recent first.
-
-**Query params:**
-| Param | Type | Default | Description |
-|---|---|---|---|
-| tier | string | — | Filter by `full` (optional) |
-| limit | int | 20 | Max records to return (1–50) |
-| since | datetime | — | Return only records after this ISO timestamp |
-
-**Response — 200:**
-```json
-[
-  {
-    "id": "uuid",
-    "tier": "full",
-    "predicted_wh": 320.5,
-    "predicted_kwh": 0.3205,
-    "estimated_cost_gbp": 0.11,
-    "aggregate_wh": 315.0,
-    "fridge_wh": 45.0,
-    "chest_freezer_wh": 20.0,
-    "upright_freezer_wh": 18.0,
-    "tumble_dryer_wh": 0.0,
-    "washing_machine_wh": 0.0,
-    "dishwasher_wh": 0.0,
-    "computer_wh": 80.0,
-    "television_wh": 95.0,
-    "electric_heater_wh": 57.0,
-    "low_confidence": false,
-    "created_at": "2013-12-16T09:00:00Z"
-  }
-]
-```
-
----
-
-## GET /api/v1/forecast/24h
-
-Returns hourly consumption forecast for the next 24 hours.
-
-**Response — 200:**
-```json
-{
-  "forecast": [
-    {
-      "hour": "2013-12-17T10:00:00",
-      "predicted_wh": 280.5,
-      "predicted_kwh": 0.28,
-      "lower_wh": 210.0,
-      "upper_wh": 350.0,
-      "estimated_cost_gbp": 0.10
-    }
-  ],
-  "peak_hour": "2013-12-17T18:00:00",
-  "lowest_hour": "2013-12-17T04:00:00"
-}
-```
-
-**Errors:**
-| Code | Meaning |
-|---|---|
-| 500 | Forecast model error |
-
----
-
-## GET /api/v1/forecast/7d
-
-Returns daily consumption forecast for the next 7 days with weekly bill projection.
-
-**Response — 200:**
-```json
-{
-  "forecast": [
-    {
-      "date": "2013-12-17",
-      "predicted_wh": 6720.0,
-      "predicted_kwh": 6.72,
-      "lower_wh": 5040.0,
-      "upper_wh": 8400.0,
-      "estimated_cost_gbp": 2.28
-    }
-  ],
-  "peak_day": "Tuesday",
-  "lowest_day": "Wednesday",
-  "projected_week_bill": {
-    "optimistic_gbp": 11.50,
-    "most_likely_gbp": 15.90,
-    "pessimistic_gbp": 19.80,
-    "period": "7 days"
-  }
-}
-```
-
-**Errors:**
-| Code | Meaning |
-|---|---|
-| 500 | Forecast model error |
-
----
-
-## GET /api/v1/models/leaderboard
-
-Returns MAPE/MAE/RMSE scores for all three time series forecast models trained against the REFIT test split.
-
-**Response — 200:**
-```json
-{
-  "forecast": [
-    { "model": "Chronos", "mae": 45.2, "rmse": 60.1, "mape": 8.5, "winner": true },
-    { "model": "MSTL",    "mae": 55.0, "rmse": 72.0, "mape": 9.8, "winner": false },
-    { "model": "XGBoost_lags", "mae": 60.1, "rmse": 80.5, "mape": 11.2, "winner": false }
-  ]
-}
-```
-
-**Errors:**
-| Code | Meaning |
-|---|---|
-| 503 | Leaderboard file not found — run training scripts first |
-
----
-
 ## GET /health
 
 **Response — 200:**
@@ -133,46 +9,113 @@ Returns MAPE/MAE/RMSE scores for all three time series forecast models trained a
 
 ---
 
-## GET /api/v1/monitor/drift
+## GET /api/v1/models/evaluation
 
-Returns the most recent drift check result.
+Returns MAE/RMSE/MAPE for the RandomForest forecast model plus per-day breakdown on 9 strategic test days.
 
 **Response — 200:**
 ```json
 {
-  "timestamp": "2013-12-16T10:00:00Z",
-  "drift_detected": true,
-  "drifted_features": ["lag_1", "rolling_mean_6"],
-  "deviations": {"lag_1": 20.5, "rolling_mean_6": 16.1},
-  "clean_row_count": 100
+  "model": "RandomForest",
+  "mae": 6811.17,
+  "rmse": 10951.45,
+  "mape": 16.6,
+  "evaluation": "9 strategic test days (3 LOW / 3 MID / 3 HIGH)",
+  "per_day": [
+    { "Band": "HIGH", "Date": "2013-11-22", "Temp C": 4.2, "Actual Wh": 58643, "Predicted Wh": 38483, "Error %": 34.4 },
+    { "Band": "HIGH", "Date": "2013-12-12", "Temp C": 7.1, "Actual Wh": 61532, "Predicted Wh": 44815, "Error %": 27.2 },
+    { "Band": "HIGH", "Date": "2014-01-19", "Temp C": 5.2, "Actual Wh": 62409, "Predicted Wh": 42710, "Error %": 31.6 },
+    { "Band": "LOW",  "Date": "2013-10-16", "Temp C": 9.8, "Actual Wh": 7084,  "Predicted Wh": 8454,  "Error %": 19.3 },
+    { "Band": "LOW",  "Date": "2014-12-07", "Temp C": 6.1, "Actual Wh": 7006,  "Predicted Wh": 7636,  "Error %": 9.0  },
+    { "Band": "LOW",  "Date": "2015-01-03", "Temp C": 3.2, "Actual Wh": 7134,  "Predicted Wh": 8419,  "Error %": 18.0 },
+    { "Band": "MID",  "Date": "2014-07-21", "Temp C": 19.3,"Actual Wh": 15198, "Predicted Wh": 15006, "Error %": 1.3  },
+    { "Band": "MID",  "Date": "2014-11-12", "Temp C": 10.2,"Actual Wh": 15072, "Predicted Wh": 15076, "Error %": 0.0  },
+    { "Band": "MID",  "Date": "2014-08-01", "Temp C": 17.8,"Actual Wh": 15058, "Predicted Wh": 13813, "Error %": 8.3  }
+  ]
 }
 ```
 
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 404 | No drift check has been run yet |
-| 500 | Failed to retrieve drift status from database |
+| 503 | model_evaluation.json not found — run scripts/run_training_forecast.py first |
 
 ---
 
-## GET /api/v1/monitor/retrain
+## GET /api/v1/forecast/7d
 
-Returns the most recent retraining outcome.
+Returns daily consumption forecast for the next 7 days with weekly bill projection.
+Seeds from the last 7 days of training data; fetches temperatures from Open-Meteo forecast API.
 
 **Response — 200:**
 ```json
 {
-  "timestamp": "2013-12-16T10:00:00+00:00",
-  "old_mape": 9.8,
-  "new_mape": 7.4,
-  "model_replaced": true,
-  "rows_used": 2500
+  "forecast": [
+    {
+      "date": "2026-06-04",
+      "predicted_wh": 15831.6,
+      "predicted_kwh": 15.8316,
+      "lower_wh": 13456.9,
+      "upper_wh": 18206.3,
+      "estimated_cost_gbp": 5.38
+    }
+  ],
+  "peak_day": "Tuesday",
+  "lowest_day": "Saturday",
+  "projected_week_bill": {
+    "optimistic_gbp": 28.50,
+    "most_likely_gbp": 33.20,
+    "pessimistic_gbp": 38.10,
+    "period": "7 days"
+  }
 }
 ```
 
 **Errors:**
 | Code | Meaning |
 |---|---|
-| 404 | No retraining has run yet |
-| 500 | Supabase query error |
+| 500 | Forecast model not loaded or prediction error |
+
+---
+
+## POST /api/v1/forecast/predict
+
+Single-day prediction from user-supplied lag features.
+Temperature is auto-fetched from Open-Meteo if not provided.
+Saves the request + result to the `forecast_requests` Supabase table.
+
+**Request:**
+```json
+{
+  "date": "2015-02-10",
+  "lag_1": 10638.64,
+  "lag_7": 14785.26,
+  "rolling_mean_7": 20023.43,
+  "heater_lag_1": 143.97,
+  "heater_lag_7": 143.99,
+  "heater_rolling_mean_7": 143.94,
+  "temp_mean_c": 2.2,
+  "temp_min_c": 0.8
+}
+```
+
+`temp_mean_c` and `temp_min_c` are optional — omit them and the backend fetches temperature automatically.
+
+**Response — 200:**
+```json
+{
+  "date": "2015-02-10",
+  "predicted_wh": 15831.6,
+  "predicted_kwh": 15.8316,
+  "estimated_cost_gbp": 5.38,
+  "lower_wh": 13456.9,
+  "upper_wh": 18206.3,
+  "temp_mean_c": 2.2,
+  "temp_min_c": 0.8
+}
+```
+
+**Errors:**
+| Code | Meaning |
+|---|---|
+| 500 | Model not loaded or prediction error |
